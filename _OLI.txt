@@ -1,0 +1,10 @@
+Frontend:
+http://testfirma2.localhost:3000/login
+Benutzername: admin
+Passwort: f9k^Sy8yQGfo
+
+admin2
+testtest
+
+Backend:
+http://localhost:3002/

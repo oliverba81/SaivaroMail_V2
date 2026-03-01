@@ -1,0 +1,29 @@
+{
+  "name": "@saivaro/scc-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Saivaro Control Center - Frontend UI",
+  "scripts": {
+    "dev": "next dev -p 3002",
+    "build": "next build",
+    "start": "next start -p 3002",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@saivaro/shared": "workspace:*",
+    "axios": "^1.6.5",
+    "next": "^14.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.2.48",
+    "@types/react-dom": "^18.2.18",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "^14.1.0",
+    "null-loader": "^4.0.1",
+    "typescript": "^5.3.3"
+  }
+}

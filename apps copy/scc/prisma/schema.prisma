@@ -1,0 +1,95 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma Seed-Konfiguration
+// Führe aus mit: pnpm db:seed
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CompanyStatus {
+  active
+  suspended
+  inactive
+}
+
+enum SccUserRole {
+  super_admin
+  admin
+  operator
+}
+
+enum SccUserStatus {
+  active
+  inactive
+}
+
+enum ProvisioningStatus {
+  pending
+  provisioning
+  ready
+  failed
+}
+
+enum HealthStatus {
+  healthy
+  unhealthy
+  unknown
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  status    CompanyStatus @default(active)
+  plan      String   @default("basic")
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dbConfig CompanyDbConfig?
+
+  @@map("companies")
+}
+
+model CompanyDbConfig {
+  id                 String            @id @default(uuid())
+  companyId          String            @unique
+  company            Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  dbHost             String
+  dbPort             Int               @default(5432)
+  dbName             String
+  dbUser             String
+  dbPassword         String            // Verschlüsselt gespeichert
+  dbSslMode          String            @default("prefer")
+  provisioningStatus ProvisioningStatus @default(pending)
+  provisionedAt      DateTime?
+  lastHealthCheck    DateTime?
+  healthStatus       HealthStatus      @default(unknown)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@map("company_db_configs")
+}
+
+model SccUser {
+  id         String        @id @default(uuid())
+  email      String        @unique
+  passwordHash String      @map("password_hash")
+  firstName  String        @map("first_name")
+  lastName   String        @map("last_name")
+  role       SccUserRole   @default(admin)
+  status     SccUserStatus @default(active)
+  lastLoginAt DateTime?    @map("last_login_at")
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+
+  @@map("scc_users")
+}
+

@@ -1,0 +1,153 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma Seed-Konfiguration
+// Führe aus mit: pnpm db:seed
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CompanyStatus {
+  active
+  suspended
+  inactive
+}
+
+enum SccUserRole {
+  super_admin
+  admin
+  operator
+}
+
+enum SccUserStatus {
+  active
+  inactive
+}
+
+enum ProvisioningStatus {
+  pending
+  provisioning
+  ready
+  failed
+}
+
+enum HealthStatus {
+  healthy
+  unhealthy
+  unknown
+}
+
+enum CronJobType {
+  scheduled_trigger
+  email_fetch
+}
+
+enum CronJobStatus {
+  running
+  success
+  failed
+}
+
+model Company {
+  id              String        @id @default(uuid())
+  name            String        @unique
+  slug            String        @unique
+  status          CompanyStatus @default(active)
+  plan            String        @default("basic")
+  metadata        Json?
+  contactAddress  String?
+  contactPhone    String?
+  contactEmail    String?
+  contactWebsite  String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  dbConfig            CompanyDbConfig?
+  tenantUserPasswords TenantUserPassword[]
+  cronJobLogs         CronJobLog[]
+
+  @@map("companies")
+}
+
+model CompanyDbConfig {
+  id                 String             @id @default(uuid())
+  companyId          String             @unique
+  company            Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  dbHost             String
+  dbPort             Int                @default(5432)
+  dbName             String
+  dbUser             String
+  dbPassword         String // Verschlüsselt gespeichert
+  dbSslMode          String             @default("prefer")
+  provisioningStatus ProvisioningStatus @default(pending)
+  provisionedAt      DateTime?
+  lastHealthCheck    DateTime?
+  healthStatus       HealthStatus       @default(unknown)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@map("company_db_configs")
+}
+
+model SccUser {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  passwordHash String        @map("password_hash")
+  firstName    String        @map("first_name")
+  lastName     String        @map("last_name")
+  role         SccUserRole   @default(admin)
+  status       SccUserStatus @default(active)
+  lastLoginAt  DateTime?     @map("last_login_at")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  @@map("scc_users")
+}
+
+model TenantUserPassword {
+  id           String   @id @default(uuid())
+  companyId    String   @map("company_id")
+  tenantUserId String   @map("tenant_user_id") // ID des Users in der Tenant-DB
+  username     String? // Benutzername (für Anzeige und Kopieren)
+  email        String? // E-Mail des Users (optional, für Migration)
+  password     String // Passwort im Klartext (nur für Test-Umgebung)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, tenantUserId])
+  @@index([companyId])
+  @@map("tenant_user_passwords")
+}
+
+model CronJobLog {
+  id              String        @id @default(uuid())
+  companyId       String        @map("company_id")
+  jobType         CronJobType   @map("job_type")
+  jobKey          String        @map("job_key")
+  status          CronJobStatus
+  startedAt       DateTime      @map("started_at")
+  completedAt     DateTime?     @map("completed_at")
+  executionTimeMs Int?          @map("execution_time_ms")
+  processedItems  Int?          @map("processed_items")
+  errorMessage    String?       @map("error_message")
+  metadata        Json?
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, jobKey, startedAt])
+  @@index([companyId, createdAt])
+  @@index([companyId, jobType, status])
+  @@index([companyId, startedAt])
+  @@index([jobKey])
+  @@map("cron_job_logs")
+}

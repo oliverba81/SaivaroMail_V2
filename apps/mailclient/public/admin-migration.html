@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ticket-ID Migration - Admin Panel</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        
+        .subtitle {
+            color: #6c757d;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover:not(:disabled) {
+            background: #5a6268;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover:not(:disabled) {
+            background: #218838;
+        }
+        
+        .progress-container {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .progress-container.active {
+            display: block;
+        }
+        
+        .progress-bar-container {
+            background: #e9ecef;
+            border-radius: 10px;
+            height: 30px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+        
+        .progress-bar {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            height: 100%;
+            width: 0;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .stat {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 4px;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #333;
+        }
+        
+        .log-container {
+            background: #2d3748;
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            display: none;
+        }
+        
+        .log-container.active {
+            display: block;
+        }
+        
+        .log-entry {
+            margin-bottom: 8px;
+        }
+        
+        .log-entry.success {
+            color: #48bb78;
+        }
+        
+        .log-entry.error {
+            color: #f56565;
+        }
+        
+        .log-entry.warning {
+            color: #ed8936;
+        }
+        
+        .alert {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .alert-info {
+            background: #e7f1ff;
+            color: #004085;
+            border: 1px solid #b8daff;
+        }
+        
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.6s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Ticket-ID Migration</h1>
+        <p class="subtitle">Admin Panel für die Migration bestehender E-Mails</p>
+        
+        <div class="alert alert-info" id="infoAlert">
+            <strong>ℹ️ Hinweis:</strong> Bitte stellen Sie sicher, dass Sie als Admin angemeldet sind, bevor Sie die Migration starten.
+        </div>
+        
+        <div class="controls">
+            <button class="btn-success" onclick="checkStatus()" id="statusBtn">
+                🔍 Status prüfen
+            </button>
+            <button class="btn-secondary" onclick="runDryRun()" id="dryRunBtn">
+                📝 Dry Run (Test)
+            </button>
+            <button class="btn-primary" onclick="runMigration()" id="migrationBtn">
+                ⚡ Migration starten
+            </button>
+            <button class="btn-success" onclick="clearLogs()" id="clearBtn">
+                🗑️ Logs löschen
+            </button>
+        </div>
+        
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progressBar">0%</div>
+            </div>
+            
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-label">Verarbeitet</div>
+                    <div class="stat-value" id="statProcessed">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Neue IDs</div>
+                    <div class="stat-value" id="statAssigned">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Wiederverwendet</div>
+                    <div class="stat-value" id="statReused">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Fehler</div>
+                    <div class="stat-value" id="statErrors">0</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="log-container" id="logContainer"></div>
+    </div>
+    
+    <script>
+        let isRunning = false;
+        
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('logContainer');
+            logContainer.classList.add('active');
+            
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+        
+        function updateProgress(progress) {
+            const percent = Math.round((progress.processedEmails / progress.totalEmails) * 100);
+            document.getElementById('progressBar').style.width = percent + '%';
+            document.getElementById('progressBar').textContent = percent + '%';
+            
+            document.getElementById('statProcessed').textContent = progress.processedEmails + '/' + progress.totalEmails;
+            document.getElementById('statAssigned').textContent = progress.assignedIds;
+            document.getElementById('statReused').textContent = progress.reusedIds;
+            document.getElementById('statErrors').textContent = progress.errors;
+        }
+        
+        function setRunning(running) {
+            isRunning = running;
+            document.getElementById('dryRunBtn').disabled = running;
+            document.getElementById('migrationBtn').disabled = running;
+            
+            if (running) {
+                document.getElementById('progressContainer').classList.add('active');
+                document.getElementById('migrationBtn').innerHTML = '<div class="spinner"></div> Migration läuft...';
+            } else {
+                document.getElementById('migrationBtn').innerHTML = '⚡ Migration starten';
+            }
+        }
+        
+        async function runMigration(dryRun = false) {
+            if (isRunning) return;
+            
+            if (!dryRun && !confirm('Möchten Sie die Migration wirklich starten? Dies wird Ticket-IDs für alle E-Mails vergeben.')) {
+                return;
+            }
+            
+            setRunning(true);
+            log(dryRun ? '📝 Starte Dry Run...' : '⚡ Starte Production Migration...', 'info');
+            
+            const token = localStorage.getItem('mailclient_token');
+            if (!token) {
+                log('❌ Kein Token gefunden! Bitte melden Sie sich an.', 'error');
+                setRunning(false);
+                return;
+            }
+            
+            // Extract Company ID from token
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            const companyId = payload.companyId;
+            
+            log(`🏢 Company ID: ${companyId}`, 'info');
+            
+            try {
+                const response = await fetch(`/api/admin/migrate-ticket-ids?companyId=${companyId}&stream=true${dryRun ? '&dryRun=true' : ''}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Migration fehlgeschlagen');
+                }
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = JSON.parse(line.slice(6));
+                            
+                            if (data.type === 'start') {
+                                log(`🚀 Migration gestartet`, 'info');
+                            } else if (data.type === 'progress') {
+                                updateProgress(data.progress);
+                            } else if (data.type === 'complete') {
+                                const r = data.result;
+                                log(`✅ Migration abgeschlossen!`, 'success');
+                                log(`📊 Verarbeitet: ${r.totalProcessed}, Neue IDs: ${r.assignedIds}, Wiederverwendet: ${r.reusedIds}, Fehler: ${r.errors}`, 'success');
+                                
+                                if (dryRun) {
+                                    log('⚠️  DRY RUN: Keine Änderungen vorgenommen!', 'warning');
+                                }
+                            } else if (data.type === 'error') {
+                                log(`❌ Fehler: ${data.error}`, 'error');
+                            }
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                log(`❌ Fehler: ${error.message}`, 'error');
+            } finally {
+                setRunning(false);
+            }
+        }
+        
+        function runDryRun() {
+            runMigration(true);
+        }
+        
+        function clearLogs() {
+            document.getElementById('logContainer').innerHTML = '';
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressBar').textContent = '0%';
+            document.getElementById('statProcessed').textContent = '0';
+            document.getElementById('statAssigned').textContent = '0';
+            document.getElementById('statReused').textContent = '0';
+            document.getElementById('statErrors').textContent = '0';
+        }
+        
+        async function checkStatus() {
+            const statusBtn = document.getElementById('statusBtn');
+            statusBtn.disabled = true;
+            statusBtn.innerHTML = '<div class="spinner"></div> Prüfe...';
+            
+            log('🔍 Prüfe Ticket-ID Status...', 'info');
+            
+            const token = localStorage.getItem('mailclient_token');
+            if (!token) {
+                log('❌ Kein Token gefunden! Bitte melden Sie sich an.', 'error');
+                statusBtn.disabled = false;
+                statusBtn.innerHTML = '🔍 Status prüfen';
+                return;
+            }
+            
+            try {
+                // Hole alle E-Mails und prüfe Ticket-IDs
+                const response = await fetch('/api/emails?limit=1000', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Fehler beim Laden der E-Mails');
+                }
+                
+                const data = await response.json();
+                const emails = data.emails || [];
+                
+                const totalEmails = emails.length;
+                const emailsWithTicketId = emails.filter(e => e.ticketId).length;
+                const emailsWithoutTicketId = totalEmails - emailsWithTicketId;
+                
+                log('', 'info');
+                log('================================================================', 'info');
+                log('📊 TICKET-ID STATUS', 'info');
+                log('================================================================', 'info');
+                log(`📧 Gesamt E-Mails: ${totalEmails}`, 'info');
+                log(`✅ Mit Ticket-ID: ${emailsWithTicketId}`, emailsWithTicketId > 0 ? 'success' : 'warning');
+                log(`❌ Ohne Ticket-ID: ${emailsWithoutTicketId}`, emailsWithoutTicketId > 0 ? 'warning' : 'success');
+                
+                if (emailsWithoutTicketId > 0) {
+                    log('', 'info');
+                    log('⚠️  MIGRATION ERFORDERLICH', 'warning');
+                    log(`   ${emailsWithoutTicketId} E-Mails benötigen eine Ticket-ID`, 'warning');
+                    log('   Bitte führen Sie die Migration aus.', 'warning');
+                } else if (totalEmails === 0) {
+                    log('', 'info');
+                    log('ℹ️  Keine E-Mails gefunden', 'info');
+                    log('   Bitte erstellen oder importieren Sie E-Mails.', 'info');
+                } else {
+                    log('', 'info');
+                    log('✅ ALLES OK', 'success');
+                    log('   Alle E-Mails haben Ticket-IDs!', 'success');
+                }
+                
+                // Zeige Beispiele
+                if (emailsWithTicketId > 0) {
+                    log('', 'info');
+                    log('📋 Beispiel E-Mails mit Ticket-ID:', 'info');
+                    emails.filter(e => e.ticketId).slice(0, 3).forEach((email, i) => {
+                        log(`${i + 1}. [${email.ticketId}] ${email.subject}`, 'success');
+                    });
+                }
+                
+                if (emailsWithoutTicketId > 0) {
+                    log('', 'info');
+                    log('⚠️  Beispiel E-Mails OHNE Ticket-ID:', 'warning');
+                    emails.filter(e => !e.ticketId).slice(0, 3).forEach((email, i) => {
+                        log(`${i + 1}. ${email.subject}`, 'warning');
+                    });
+                }
+                
+                log('================================================================', 'info');
+                log('', 'info');
+                
+            } catch (error) {
+                log(`❌ Fehler beim Prüfen des Status: ${error.message}`, 'error');
+            } finally {
+                statusBtn.disabled = false;
+                statusBtn.innerHTML = '🔍 Status prüfen';
+            }
+        }
+    </script>
+</body>
+</html>

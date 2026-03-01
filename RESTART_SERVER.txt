@@ -1,0 +1,11 @@
+Der Server muss neu gestartet werden, damit die Ticket-ID Änderungen wirksam werden.
+
+Grund: Die API-Route wurde aktualisiert, um Ticket-IDs im camelCase-Format (ticketId) 
+statt snake_case (ticket_id) zurückzugeben.
+
+Bitte führen Sie folgendes aus:
+1. Stoppen Sie den laufenden Server (Strg+C im Terminal)
+2. Starten Sie ihn neu mit: npm run dev
+3. Laden Sie die E-Mail-Seite neu (F5)
+
+Die Ticket-IDs sollten dann sichtbar sein!

@@ -1,0 +1,33 @@
+{
+  "name": "@saivaro/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Shared Code für Saivaro Mail (Types, Utilities, API-Clients)",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
+
+
+
+

@@ -1,0 +1,22 @@
+services:
+  # SCC-Datenbank (zentrale Datenbank)
+  postgres-scc:
+    image: postgres:15-alpine
+    container_name: saivaro-postgres-scc
+    environment:
+      POSTGRES_USER: saivaro
+      POSTGRES_PASSWORD: saivaro_dev_password
+      POSTGRES_DB: saivaro_scc
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-scc-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saivaro"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-scc-data:
+
