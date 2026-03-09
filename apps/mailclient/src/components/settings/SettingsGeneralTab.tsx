@@ -7,7 +7,9 @@ import GeneralSettings from '@/components/GeneralSettings';
 import SettingsExportImport from '@/components/SettingsExportImport';
 import Card from '@/components/Card';
 import Button from '@/components/Button';
-import { FiVolume2 } from 'react-icons/fi';
+import { FiSave, FiVolume2 } from 'react-icons/fi';
+
+export type AiProvider = 'openai' | 'google';
 
 export interface InitialSettings {
   fetchIntervalMinutes?: number;
@@ -18,6 +20,9 @@ export interface InitialSettings {
   elevenlabsEnabled?: boolean;
   themeRequired?: boolean;
   permanentDeleteAfterDays?: number;
+  aiProvider?: AiProvider;
+  geminiApiKey?: string | null;
+  geminiModel?: string;
 }
 
 interface SettingsGeneralTabProps {
@@ -44,68 +49,49 @@ export default function SettingsGeneralTab({
   onEmailFiltersChange,
   cardOrder,
   onCardOrderChange,
-  onSaveFilters,
+  onSaveFilters: _onSaveFilters,
   initialSettings,
 }: SettingsGeneralTabProps) {
   const router = routerProp || useRouter();
   const toast = toastProp || useToast();
+
+  // Sektion 1: System & Abruf
   const [fetchInterval, setFetchInterval] = useState(5);
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [_hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const originalFetchIntervalRef = useRef<number>(5);
-  
-  // OpenAI & ElevenLabs Config
+
+  // AI Provider & OpenAI & Gemini & ElevenLabs Config
+  const [aiProvider, setAiProvider] = useState<AiProvider>('openai');
   const [openaiApiKey, setOpenaiApiKey] = useState('');
   const [openaiModel, setOpenaiModel] = useState('gpt-4o-mini');
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [geminiModel, setGeminiModel] = useState('gemini-2.0-flash');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState('');
   const [elevenlabsVoiceId, setElevenlabsVoiceId] = useState('');
   const [elevenlabsEnabled, setElevenlabsEnabled] = useState(false);
   const [showElevenlabsKey, setShowElevenlabsKey] = useState(false);
   const [themeRequired, setThemeRequired] = useState(false);
   const [permanentDeleteAfterDays, setPermanentDeleteAfterDays] = useState(0);
-  
-  // Refs für State-Werte, um sicherzustellen, dass handleSaveSettings immer die aktuellsten Werte hat
-  const openaiApiKeyRef = useRef(openaiApiKey);
-  const elevenlabsApiKeyRef = useRef(elevenlabsApiKey);
-  const elevenlabsVoiceIdRef = useRef(elevenlabsVoiceId);
-  const elevenlabsEnabledRef = useRef(elevenlabsEnabled);
-  const themeRequiredRef = useRef(themeRequired);
-  
-  // Aktualisiere Refs, wenn State sich ändert
-  useEffect(() => {
-    openaiApiKeyRef.current = openaiApiKey;
-  }, [openaiApiKey]);
-  
-  useEffect(() => {
-    elevenlabsApiKeyRef.current = elevenlabsApiKey;
-  }, [elevenlabsApiKey]);
-  
-  useEffect(() => {
-    elevenlabsVoiceIdRef.current = elevenlabsVoiceId;
-  }, [elevenlabsVoiceId]);
-  
-  useEffect(() => {
-    elevenlabsEnabledRef.current = elevenlabsEnabled;
-  }, [elevenlabsEnabled]);
-  
-  useEffect(() => {
-    themeRequiredRef.current = themeRequired;
-  }, [themeRequired]);
-  
+
+  // Original-Konfiguration zum Erkennen ungespeicherter Änderungen
   const originalConfigRef = useRef<{
+    aiProvider: AiProvider;
     openaiApiKey: string;
     openaiModel: string;
+    geminiApiKey: string;
+    geminiModel: string;
     elevenlabsApiKey: string;
     elevenlabsVoiceId: string;
     elevenlabsEnabled: boolean;
     themeRequired: boolean;
     permanentDeleteAfterDays: number;
   }>({
+    aiProvider: 'openai',
     openaiApiKey: '',
     openaiModel: 'gpt-4o-mini',
+    geminiApiKey: '',
+    geminiModel: 'gemini-2.0-flash',
     elevenlabsApiKey: '',
     elevenlabsVoiceId: '',
     elevenlabsEnabled: false,
@@ -113,203 +99,113 @@ export default function SettingsGeneralTab({
     permanentDeleteAfterDays: 0,
   });
 
-  // Lade fetchInterval beim Mount
-  const loadFetchInterval = useCallback(async () => {
-    try {
-      const token = localStorage.getItem('mailclient_token');
-      const response = await fetch('/api/settings', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+  const [_hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
 
-      if (response.status === 401) {
-        localStorage.removeItem('mailclient_token');
-        localStorage.removeItem('mailclient_user');
-        router.push('/login');
-        return;
-      }
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        if (onError) {
-          onError(data.error || 'Fehler beim Laden der Einstellungen');
-        }
-        return;
-      }
-
-      const data = await response.json();
-      if (data.settings) {
-        
-        if (data.settings?.fetchIntervalMinutes) {
-          setFetchInterval(data.settings.fetchIntervalMinutes);
-          originalFetchIntervalRef.current = data.settings.fetchIntervalMinutes;
-        }
-        // Lade OpenAI & ElevenLabs Config
-        if (data.settings?.openaiApiKey !== undefined && data.settings?.openaiApiKey !== null) {
-          setOpenaiApiKey(data.settings.openaiApiKey);
-          originalConfigRef.current.openaiApiKey = data.settings.openaiApiKey;
-        }
-        if (data.settings?.openaiModel) {
-          setOpenaiModel(data.settings.openaiModel);
-          originalConfigRef.current.openaiModel = data.settings.openaiModel;
-        }
-        if (data.settings?.elevenlabsApiKey !== undefined && data.settings?.elevenlabsApiKey !== null) {
-          setElevenlabsApiKey(data.settings.elevenlabsApiKey);
-          originalConfigRef.current.elevenlabsApiKey = data.settings.elevenlabsApiKey;
-        }
-        if (data.settings?.elevenlabsVoiceId !== undefined && data.settings?.elevenlabsVoiceId !== null) {
-          setElevenlabsVoiceId(data.settings.elevenlabsVoiceId);
-          originalConfigRef.current.elevenlabsVoiceId = data.settings.elevenlabsVoiceId;
-        }
-        if (data.settings?.elevenlabsEnabled !== undefined) {
-          setElevenlabsEnabled(data.settings.elevenlabsEnabled);
-          originalConfigRef.current.elevenlabsEnabled = data.settings.elevenlabsEnabled;
-        }
-        if (data.settings?.themeRequired !== undefined) {
-          setThemeRequired(data.settings.themeRequired);
-          originalConfigRef.current.themeRequired = data.settings.themeRequired;
-        }
-        if (data.settings?.permanentDeleteAfterDays !== undefined) {
-          const days = Math.max(0, Math.floor(Number(data.settings.permanentDeleteAfterDays)) || 0);
-          setPermanentDeleteAfterDays(days);
-          originalConfigRef.current.permanentDeleteAfterDays = days;
-        }
-      }
-    } catch (err: any) {
-      console.error('Fehler beim Laden der Einstellungen:', err);
-      if (onError) {
-        onError(err?.message || 'Fehler beim Laden der Einstellungen');
-      }
-    }
-  }, [router, onError]);
-
+  // Initialwerte aus parent (`initialSettings`) übernehmen
   useEffect(() => {
-    if (initialSettings) {
-      if (initialSettings.fetchIntervalMinutes !== undefined) {
-        setFetchInterval(initialSettings.fetchIntervalMinutes);
-        originalFetchIntervalRef.current = initialSettings.fetchIntervalMinutes;
-      }
-      if (initialSettings.openaiApiKey !== undefined && initialSettings.openaiApiKey !== null) {
-        setOpenaiApiKey(initialSettings.openaiApiKey);
-        originalConfigRef.current.openaiApiKey = initialSettings.openaiApiKey;
-      }
-      if (initialSettings.openaiModel) {
-        setOpenaiModel(initialSettings.openaiModel);
-        originalConfigRef.current.openaiModel = initialSettings.openaiModel;
-      }
-      if (initialSettings.elevenlabsApiKey !== undefined && initialSettings.elevenlabsApiKey !== null) {
-        setElevenlabsApiKey(initialSettings.elevenlabsApiKey);
-        originalConfigRef.current.elevenlabsApiKey = initialSettings.elevenlabsApiKey;
-      }
-      if (initialSettings.elevenlabsVoiceId !== undefined && initialSettings.elevenlabsVoiceId !== null) {
-        setElevenlabsVoiceId(initialSettings.elevenlabsVoiceId);
-        originalConfigRef.current.elevenlabsVoiceId = initialSettings.elevenlabsVoiceId;
-      }
-      if (initialSettings.elevenlabsEnabled !== undefined) {
-        setElevenlabsEnabled(initialSettings.elevenlabsEnabled);
-        originalConfigRef.current.elevenlabsEnabled = initialSettings.elevenlabsEnabled;
-      }
-      if (initialSettings.themeRequired !== undefined) {
-        setThemeRequired(initialSettings.themeRequired);
-        originalConfigRef.current.themeRequired = initialSettings.themeRequired;
-      }
-      if (initialSettings.permanentDeleteAfterDays !== undefined) {
-        const days = Math.max(0, Math.floor(Number(initialSettings.permanentDeleteAfterDays)) || 0);
-        setPermanentDeleteAfterDays(days);
-        originalConfigRef.current.permanentDeleteAfterDays = days;
-      }
-    } else {
-      loadFetchInterval();
-    }
-  }, [initialSettings]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!initialSettings) return;
 
-  // Track unsaved changes
+    if (initialSettings.fetchIntervalMinutes !== undefined) {
+      const minutes = Math.min(1440, Math.max(1, Number(initialSettings.fetchIntervalMinutes) || 5));
+      setFetchInterval(minutes);
+      originalFetchIntervalRef.current = minutes;
+    }
+    if (initialSettings.openaiApiKey !== undefined && initialSettings.openaiApiKey !== null) {
+      setOpenaiApiKey(initialSettings.openaiApiKey);
+      originalConfigRef.current.openaiApiKey = initialSettings.openaiApiKey;
+    }
+    if (initialSettings.openaiModel) {
+      setOpenaiModel(initialSettings.openaiModel);
+      originalConfigRef.current.openaiModel = initialSettings.openaiModel;
+    }
+    if (initialSettings.aiProvider === 'openai' || initialSettings.aiProvider === 'google') {
+      setAiProvider(initialSettings.aiProvider);
+      originalConfigRef.current.aiProvider = initialSettings.aiProvider;
+    }
+    if (initialSettings.geminiApiKey !== undefined && initialSettings.geminiApiKey !== null) {
+      setGeminiApiKey(initialSettings.geminiApiKey);
+      originalConfigRef.current.geminiApiKey = initialSettings.geminiApiKey;
+    }
+    if (initialSettings.geminiModel) {
+      setGeminiModel(initialSettings.geminiModel);
+      originalConfigRef.current.geminiModel = initialSettings.geminiModel;
+    }
+    if (initialSettings.elevenlabsApiKey !== undefined && initialSettings.elevenlabsApiKey !== null) {
+      setElevenlabsApiKey(initialSettings.elevenlabsApiKey);
+      originalConfigRef.current.elevenlabsApiKey = initialSettings.elevenlabsApiKey;
+    }
+    if (initialSettings.elevenlabsVoiceId !== undefined && initialSettings.elevenlabsVoiceId !== null) {
+      setElevenlabsVoiceId(initialSettings.elevenlabsVoiceId);
+      originalConfigRef.current.elevenlabsVoiceId = initialSettings.elevenlabsVoiceId;
+    }
+    if (initialSettings.elevenlabsEnabled !== undefined) {
+      setElevenlabsEnabled(initialSettings.elevenlabsEnabled);
+      originalConfigRef.current.elevenlabsEnabled = initialSettings.elevenlabsEnabled;
+    }
+    if (initialSettings.themeRequired !== undefined) {
+      setThemeRequired(initialSettings.themeRequired);
+      originalConfigRef.current.themeRequired = initialSettings.themeRequired;
+    }
+    if (initialSettings.permanentDeleteAfterDays !== undefined) {
+      const days = Math.max(0, Math.floor(Number(initialSettings.permanentDeleteAfterDays)) || 0);
+      setPermanentDeleteAfterDays(days);
+      originalConfigRef.current.permanentDeleteAfterDays = days;
+    }
+  }, [initialSettings]);
+
+  // Unsaved-Changes-Tracking
   useEffect(() => {
-    const hasChanges = 
+    const hasChanges =
       fetchInterval !== originalFetchIntervalRef.current ||
+      aiProvider !== originalConfigRef.current.aiProvider ||
       openaiApiKey !== originalConfigRef.current.openaiApiKey ||
       openaiModel !== originalConfigRef.current.openaiModel ||
+      geminiApiKey !== originalConfigRef.current.geminiApiKey ||
+      geminiModel !== originalConfigRef.current.geminiModel ||
       elevenlabsApiKey !== originalConfigRef.current.elevenlabsApiKey ||
       elevenlabsVoiceId !== originalConfigRef.current.elevenlabsVoiceId ||
       elevenlabsEnabled !== originalConfigRef.current.elevenlabsEnabled ||
       themeRequired !== originalConfigRef.current.themeRequired ||
       permanentDeleteAfterDays !== originalConfigRef.current.permanentDeleteAfterDays;
+
     setHasUnsavedChanges(hasChanges);
     if (onHasUnsavedChanges) {
       onHasUnsavedChanges(hasChanges);
     }
-  }, [fetchInterval, openaiApiKey, openaiModel, elevenlabsApiKey, elevenlabsVoiceId, elevenlabsEnabled, themeRequired, permanentDeleteAfterDays, onHasUnsavedChanges]);
+  }, [
+    fetchInterval,
+    aiProvider,
+    openaiApiKey,
+    openaiModel,
+    geminiApiKey,
+    geminiModel,
+    elevenlabsApiKey,
+    elevenlabsVoiceId,
+    elevenlabsEnabled,
+    themeRequired,
+    permanentDeleteAfterDays,
+    onHasUnsavedChanges,
+  ]);
 
-  // Auto-Save mit Debounce für alle Einstellungen
-  useEffect(() => {
-    const hasChanges = 
-      fetchInterval !== originalFetchIntervalRef.current ||
-      openaiApiKey !== originalConfigRef.current.openaiApiKey ||
-      openaiModel !== originalConfigRef.current.openaiModel ||
-      elevenlabsApiKey !== originalConfigRef.current.elevenlabsApiKey ||
-      elevenlabsVoiceId !== originalConfigRef.current.elevenlabsVoiceId ||
-      elevenlabsEnabled !== originalConfigRef.current.elevenlabsEnabled ||
-      themeRequired !== originalConfigRef.current.themeRequired ||
-      permanentDeleteAfterDays !== originalConfigRef.current.permanentDeleteAfterDays;
-    
-    if (!hasChanges) return; // Keine Änderungen
-
-    // Clear existing timer
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-    }
-
-    // Set new timer
-    autoSaveTimerRef.current = setTimeout(() => {
-      handleSaveSettings(true);
-    }, 2500); // 2.5 Sekunden Debounce
-
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchInterval, openaiApiKey, openaiModel, elevenlabsApiKey, elevenlabsVoiceId, elevenlabsEnabled, themeRequired, permanentDeleteAfterDays]);
-
-  // Cleanup bei Unmount
-  useEffect(() => {
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  const handleSaveSettings = useCallback(async (isAutoSave = false) => {
-    if (!isAutoSave) {
-      setSavingSettings(true);
-    } else {
-      setAutoSaveStatus('saving');
-    }
+  const handleSaveSettings = useCallback(async () => {
+    setSavingSettings(true);
     if (onError) {
       onError('');
     }
 
     try {
-      // WICHTIG: Verwende Ref für State-Werte, um sicherzustellen, dass wir immer die aktuellsten Werte haben
-      // Der useCallback kann veraltete State-Werte aus dem Closure haben
-      const currentOpenaiApiKey = openaiApiKeyRef.current ?? openaiApiKey;
-      const currentElevenlabsApiKey = elevenlabsApiKeyRef.current ?? elevenlabsApiKey;
-      const currentElevenlabsVoiceId = elevenlabsVoiceIdRef.current ?? elevenlabsVoiceId;
-      const currentElevenlabsEnabled = elevenlabsEnabledRef.current ?? elevenlabsEnabled;
-      const currentThemeRequired = themeRequiredRef.current ?? themeRequired;
-      
       const requestBody = {
         fetchIntervalMinutes: fetchInterval,
-        openaiApiKey: currentOpenaiApiKey && currentOpenaiApiKey.trim() ? currentOpenaiApiKey.trim() : null,
-        openaiModel: openaiModel,
-        elevenlabsApiKey: currentElevenlabsApiKey && currentElevenlabsApiKey.trim() ? currentElevenlabsApiKey.trim() : null,
-        elevenlabsVoiceId: currentElevenlabsVoiceId && currentElevenlabsVoiceId.trim() ? currentElevenlabsVoiceId.trim() : null,
-        elevenlabsEnabled: currentElevenlabsEnabled,
-        themeRequired: currentThemeRequired,
+        aiProvider,
+        openaiApiKey: openaiApiKey && openaiApiKey.trim() ? openaiApiKey.trim() : null,
+        openaiModel,
+        geminiApiKey: geminiApiKey && geminiApiKey.trim() ? geminiApiKey.trim() : null,
+        geminiModel,
+        elevenlabsApiKey: elevenlabsApiKey && elevenlabsApiKey.trim() ? elevenlabsApiKey.trim() : null,
+        elevenlabsVoiceId: elevenlabsVoiceId && elevenlabsVoiceId.trim() ? elevenlabsVoiceId.trim() : null,
+        elevenlabsEnabled,
+        themeRequired,
         permanentDeleteAfterDays: Math.max(0, Math.floor(Number(permanentDeleteAfterDays)) || 0),
       };
 
@@ -337,46 +233,28 @@ export default function SettingsGeneralTab({
         if (onError) {
           onError(errorMsg);
         }
-        if (isAutoSave) {
-          setAutoSaveStatus('idle');
-        }
         return;
       }
 
-      // Erfolgsmeldung nur bei manuellem Speichern
-      if (!isAutoSave) {
-        toast.showSuccess('Einstellungen erfolgreich gespeichert!');
-      } else {
-        setAutoSaveStatus('saved');
-        setTimeout(() => setAutoSaveStatus('idle'), 2000);
-      }
-      
+      toast.showSuccess('Einstellungen erfolgreich gespeichert!');
+
       originalFetchIntervalRef.current = fetchInterval;
-      
-      // Update original config ref mit Werten aus der Response
-      // WICHTIG: Nur State aktualisieren, wenn der Response-Wert nicht null ist
-      // oder wenn der aktuelle State leer ist (um gelöschte Keys zu entfernen)
+
       if (data.settings) {
-        // OpenAI API Key: Nur aktualisieren, wenn Response einen Wert hat (nicht null)
         if (data.settings.openaiApiKey !== undefined) {
           if (data.settings.openaiApiKey !== null) {
-            // Response hat einen Key - aktualisiere State und Ref
             originalConfigRef.current.openaiApiKey = data.settings.openaiApiKey;
             setOpenaiApiKey(data.settings.openaiApiKey);
           } else if (openaiApiKey === '') {
-            // Response ist null UND aktueller State ist leer - aktualisiere Ref, aber nicht State
             originalConfigRef.current.openaiApiKey = '';
           }
-          // Wenn Response null ist, aber State einen Wert hat, State NICHT überschreiben
-          // (User hat gerade einen Key eingegeben, der noch nicht gespeichert wurde)
         }
-        
+
         if (data.settings.openaiModel !== undefined) {
           originalConfigRef.current.openaiModel = data.settings.openaiModel;
           setOpenaiModel(data.settings.openaiModel);
         }
-        
-        // ElevenLabs API Key: Gleiche Logik wie OpenAI
+
         if (data.settings.elevenlabsApiKey !== undefined) {
           if (data.settings.elevenlabsApiKey !== null) {
             originalConfigRef.current.elevenlabsApiKey = data.settings.elevenlabsApiKey;
@@ -385,7 +263,7 @@ export default function SettingsGeneralTab({
             originalConfigRef.current.elevenlabsApiKey = '';
           }
         }
-        
+
         if (data.settings.elevenlabsVoiceId !== undefined && data.settings.elevenlabsVoiceId !== null) {
           originalConfigRef.current.elevenlabsVoiceId = data.settings.elevenlabsVoiceId;
           setElevenlabsVoiceId(data.settings.elevenlabsVoiceId);
@@ -403,8 +281,24 @@ export default function SettingsGeneralTab({
           originalConfigRef.current.permanentDeleteAfterDays = days;
           setPermanentDeleteAfterDays(days);
         }
+        if (data.settings.aiProvider === 'openai' || data.settings.aiProvider === 'google') {
+          originalConfigRef.current.aiProvider = data.settings.aiProvider;
+          setAiProvider(data.settings.aiProvider);
+        }
+        if (data.settings.geminiApiKey !== undefined) {
+          if (data.settings.geminiApiKey !== null) {
+            originalConfigRef.current.geminiApiKey = data.settings.geminiApiKey;
+            setGeminiApiKey(data.settings.geminiApiKey);
+          } else if (geminiApiKey === '') {
+            originalConfigRef.current.geminiApiKey = '';
+          }
+        }
+        if (data.settings.geminiModel !== undefined) {
+          originalConfigRef.current.geminiModel = data.settings.geminiModel;
+          setGeminiModel(data.settings.geminiModel);
+        }
       }
-      
+
       setHasUnsavedChanges(false);
       if (onHasUnsavedChanges) {
         onHasUnsavedChanges(false);
@@ -414,64 +308,81 @@ export default function SettingsGeneralTab({
       if (onError) {
         onError(errorMsg);
       }
-      if (isAutoSave) {
-        setAutoSaveStatus('idle');
-      }
     } finally {
-      if (!isAutoSave) {
-        setSavingSettings(false);
-      }
+      setSavingSettings(false);
     }
-  }, [fetchInterval, router, toast, onError, onHasUnsavedChanges]);
+  }, [
+    aiProvider,
+    elevenlabsApiKey,
+    elevenlabsEnabled,
+    elevenlabsVoiceId,
+    fetchInterval,
+    geminiApiKey,
+    geminiModel,
+    onError,
+    onHasUnsavedChanges,
+    openaiApiKey,
+    openaiModel,
+    permanentDeleteAfterDays,
+    router,
+    themeRequired,
+    toast,
+  ]);
 
-  // Keyboard Shortcut: Ctrl+S / Cmd+S
+  // Keyboard Shortcut: Ctrl+S / Cmd+S für globales Speichern
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's' && !savingSettings) {
         e.preventDefault();
-        handleSaveSettings(false);
+        handleSaveSettings();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [savingSettings, handleSaveSettings]);
+  }, [handleSaveSettings, savingSettings]);
 
-  const handleImportSettings = useCallback(async (data: any) => {
-    if (data.fetchInterval) {
-      setFetchInterval(data.fetchInterval);
-      originalFetchIntervalRef.current = data.fetchInterval;
-    }
-    if (data.emailFilters && onEmailFiltersChange) {
-      onEmailFiltersChange(data.emailFilters);
-    }
-    if (data.cardOrder && onCardOrderChange) {
-      onCardOrderChange(data.cardOrder);
-    }
-    
-    // Warte auf beide Speicher-Operationen
-    await handleSaveSettings(false);
-    if (data.emailFilters && onSaveFilters) {
-      try {
-        await onSaveFilters();
-      } catch (error) {
-        if (onError) {
-          onError('Fehler beim Speichern der Filter');
-        }
-        console.error('Error saving filters:', error);
+  const handleFetchIntervalChange = useCallback((interval: number) => {
+    const clamped = Math.min(1440, Math.max(1, interval || 1));
+    setFetchInterval(clamped);
+  }, []);
+
+  const handleImportSettings = useCallback(
+    async (data: any) => {
+      if (data.fetchInterval) {
+        const minutes = Math.min(1440, Math.max(1, Number(data.fetchInterval) || 5));
+        setFetchInterval(minutes);
       }
-    }
-  }, [onEmailFiltersChange, onCardOrderChange, onSaveFilters, handleSaveSettings, onError]);
+      if (data.emailFilters && onEmailFiltersChange) {
+        onEmailFiltersChange(data.emailFilters);
+      }
+      if (data.cardOrder && onCardOrderChange) {
+        onCardOrderChange(data.cardOrder);
+      }
+
+      setHasUnsavedChanges(true);
+      if (onHasUnsavedChanges) {
+        onHasUnsavedChanges(true);
+      }
+
+      toast.showSuccess(
+        'Einstellungen importiert. Bitte unten auf „Alle Einstellungen speichern“ klicken, um sie zu übernehmen.',
+      );
+    },
+    [onCardOrderChange, onEmailFiltersChange, onHasUnsavedChanges, toast],
+  );
 
   return (
     <>
+      {/* Sektion 1: System & Abruf / Allgemeine Einstellungen */}
       <GeneralSettings
         fetchInterval={fetchInterval}
-        onFetchIntervalChange={setFetchInterval}
-        onSave={() => handleSaveSettings(false)}
-        saving={savingSettings}
-        autoSaveStatus={autoSaveStatus}
+        onFetchIntervalChange={handleFetchIntervalChange}
+        themeRequired={themeRequired}
+        onThemeRequiredChange={setThemeRequired}
       />
+
+      {/* Sektion 2: Daten & Wartung */}
       <div style={{ marginTop: '1.5rem' }}>
         <SettingsExportImport
           fetchInterval={fetchInterval}
@@ -480,57 +391,54 @@ export default function SettingsGeneralTab({
           onImport={handleImportSettings}
         />
       </div>
-      
-      {/* OpenAI-Konfiguration */}
       <div style={{ marginTop: '1.5rem' }}>
-        <Card>
-          <h2 className="text-xl font-semibold mb-6">OpenAI-Konfiguration</h2>
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">
-              API-Key:
+        <Card className="p-8 space-y-4">
+          <h2 className="text-xl font-semibold mb-3">Papierkorb & Aufräumregeln</h2>
+          <div style={{ marginBottom: '1.5rem' }}>
+            <label
+              style={{
+                display: 'block',
+                marginBottom: '0.5rem',
+                fontWeight: '600',
+                color: '#333',
+                fontSize: '0.9rem',
+              }}
+            >
+              Gelöschte E-Mails endgültig löschen nach (Tage)
             </label>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <input
-                type={showOpenaiKey ? 'text' : 'password'}
-                value={openaiApiKey}
-                onChange={(e) => {
-                  const newValue = e.target.value;
-                  setOpenaiApiKey(newValue);
-                  openaiApiKeyRef.current = newValue; // Aktualisiere Ref sofort
-                }}
-                placeholder="sk-..."
-                style={{
-                  flex: 1,
-                  padding: '0.5rem',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowOpenaiKey(!showOpenaiKey)}
-                style={{
-                  padding: '0.5rem 1rem',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  backgroundColor: '#f8f9fa',
-                  cursor: 'pointer',
-                }}
-              >
-                {showOpenaiKey ? 'Verbergen' : 'Anzeigen'}
-              </button>
-            </div>
-            <small className="block mt-2 text-sm text-gray-500">
-              Dieser API-Key wird für alle ChatGPT-Funktionen verwendet (z.B. E-Mail-Zusammenfassung)
+            <input
+              type="number"
+              min={0}
+              max={36500}
+              value={permanentDeleteAfterDays}
+              onChange={(e) =>
+                setPermanentDeleteAfterDays(Math.max(0, Math.floor(Number(e.target.value)) || 0))
+              }
+              style={{
+                width: '120px',
+                padding: '0.5rem',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '0.9rem',
+              }}
+            />
+            <small className="block mt-1 text-sm text-gray-500">
+              0 = nie (gelöscht markierte E-Mails bleiben dauerhaft im Papierkorb). Ein Cron-Job löscht E-Mails,
+              die länger als die angegebene Anzahl Tage als gelöscht markiert sind.
             </small>
           </div>
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">
-              Modell:
-            </label>
+        </Card>
+      </div>
+
+      {/* Sektion 3: AI-Einstellungen */}
+      <div style={{ marginTop: '1.5rem' }}>
+        <Card className="p-8">
+          <h2 className="text-xl font-semibold mb-6">AI-Provider für E-Mail-Zusammenfassung</h2>
+          <div className="mb-6">
+            <label className="block text-sm font-medium mb-2">API-Provider:</label>
             <select
-              value={openaiModel}
-              onChange={(e) => setOpenaiModel(e.target.value)}
+              value={aiProvider}
+              onChange={(e) => setAiProvider(e.target.value as AiProvider)}
               style={{
                 width: '100%',
                 maxWidth: '300px',
@@ -539,31 +447,141 @@ export default function SettingsGeneralTab({
                 borderRadius: '4px',
               }}
             >
-              <option value="gpt-4o-mini">GPT-4o Mini (Empfohlen, kostengünstig)</option>
-              <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Schnell, kostengünstig)</option>
-              <option value="gpt-4">GPT-4 (Bessere Qualität, teurer)</option>
-              <option value="gpt-4-turbo">GPT-4 Turbo (Beste Qualität, teuer)</option>
+              <option value="openai">OpenAI (GPT)</option>
+              <option value="google">Google Gemini</option>
             </select>
+            <small className="block mt-2 text-sm text-gray-500">
+              Wählen Sie den AI-Provider für die E-Mail-Zusammenfassung.
+            </small>
           </div>
+
+          {aiProvider === 'openai' && (
+            <>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">OpenAI API-Key:</label>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <input
+                    type={showOpenaiKey ? 'text' : 'password'}
+                    value={openaiApiKey}
+                    onChange={(e) => setOpenaiApiKey(e.target.value)}
+                    placeholder="sk-..."
+                    style={{
+                      flex: 1,
+                      padding: '0.5rem',
+                      border: '1px solid #ddd',
+                      borderRadius: '4px',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowOpenaiKey(!showOpenaiKey)}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      border: '1px solid #ddd',
+                      borderRadius: '4px',
+                      backgroundColor: '#f8f9fa',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {showOpenaiKey ? 'Verbergen' : 'Anzeigen'}
+                  </button>
+                </div>
+                <small className="block mt-2 text-sm text-gray-500">
+                  Dieser API-Key wird für E-Mail-Zusammenfassungen verwendet.
+                </small>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">OpenAI Modell:</label>
+                <select
+                  value={openaiModel}
+                  onChange={(e) => setOpenaiModel(e.target.value)}
+                  style={{
+                    width: '100%',
+                    maxWidth: '300px',
+                    padding: '0.5rem',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                  }}
+                >
+                  <option value="gpt-4o-mini">GPT-4o Mini (Empfohlen, kostengünstig)</option>
+                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Schnell, kostengünstig)</option>
+                  <option value="gpt-4">GPT-4 (Bessere Qualität, teurer)</option>
+                  <option value="gpt-4-turbo">GPT-4 Turbo (Beste Qualität, teuer)</option>
+                </select>
+              </div>
+            </>
+          )}
+
+          {aiProvider === 'google' && (
+            <>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">Google Gemini API-Key:</label>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <input
+                    type={showGeminiKey ? 'text' : 'password'}
+                    value={geminiApiKey}
+                    onChange={(e) => setGeminiApiKey(e.target.value)}
+                    placeholder="AIza..."
+                    style={{
+                      flex: 1,
+                      padding: '0.5rem',
+                      border: '1px solid #ddd',
+                      borderRadius: '4px',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowGeminiKey(!showGeminiKey)}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      border: '1px solid #ddd',
+                      borderRadius: '4px',
+                      backgroundColor: '#f8f9fa',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {showGeminiKey ? 'Verbergen' : 'Anzeigen'}
+                  </button>
+                </div>
+                <small className="block mt-2 text-sm text-gray-500">
+                  API-Key aus Google AI Studio. Wird für E-Mail-Zusammenfassungen verwendet.
+                </small>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">Gemini Modell:</label>
+                <select
+                  value={geminiModel}
+                  onChange={(e) => setGeminiModel(e.target.value)}
+                  style={{
+                    width: '100%',
+                    maxWidth: '300px',
+                    padding: '0.5rem',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                  }}
+                >
+                  <option value="gemini-2.0-flash">Gemini 2.0 Flash (Schnell, günstig)</option>
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Gutes Preis-Leistungs-Verhältnis)</option>
+                  <option value="gemini-2.5-pro">Gemini 2.5 Pro (Höhere Qualität)</option>
+                  <option value="gemini-1.5-flash">Gemini 1.5 Flash (Stabiler Fallback)</option>
+                </select>
+              </div>
+            </>
+          )}
         </Card>
       </div>
-      
-      {/* ElevenLabs-Konfiguration */}
+
+      {/* Sektion 4: ElevenLabs & Regeln */}
       <div style={{ marginTop: '1.5rem' }}>
-        <Card>
-          <h2 className="text-xl font-semibold mb-6">ElevenLabs-Konfiguration (Text-to-Speech)</h2>
+        <Card className="p-8">
+          <h2 className="text-xl font-semibold mb-6">ElevenLabs & Arbeitsregeln</h2>
+
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">
-              ElevenLabs aktivieren:
-            </label>
+            <label className="block text-sm font-medium mb-2">ElevenLabs aktivieren:</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <button
                 type="button"
-                onClick={() => {
-                  const newValue = !elevenlabsEnabled;
-                  setElevenlabsEnabled(newValue);
-                  elevenlabsEnabledRef.current = newValue; // Aktualisiere Ref sofort
-                }}
+                onClick={() => setElevenlabsEnabled((prev) => !prev)}
                 style={{
                   width: '48px',
                   height: '24px',
@@ -594,22 +612,18 @@ export default function SettingsGeneralTab({
               </span>
             </div>
             <small className="block mt-2 text-sm text-gray-500">
-              Aktivieren Sie ElevenLabs, um bessere Text-to-Speech-Stimmen zu verwenden. Wenn deaktiviert, wird die Browser-native Speech API verwendet.
+              Aktivieren Sie ElevenLabs, um bessere Text-to-Speech-Stimmen zu verwenden. Wenn deaktiviert, wird die
+              Browser-native Speech API verwendet.
             </small>
           </div>
+
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">
-              API-Key (optional):
-            </label>
+            <label className="block text-sm font-medium mb-2">API-Key (optional):</label>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <input
                 type={showElevenlabsKey ? 'text' : 'password'}
                 value={elevenlabsApiKey}
-                onChange={(e) => {
-                  const newValue = e.target.value;
-                  setElevenlabsApiKey(newValue);
-                  elevenlabsApiKeyRef.current = newValue; // Aktualisiere Ref sofort
-                }}
+                onChange={(e) => setElevenlabsApiKey(e.target.value)}
                 placeholder="ElevenLabs API-Key"
                 style={{
                   flex: 1,
@@ -633,21 +647,17 @@ export default function SettingsGeneralTab({
               </button>
             </div>
             <small className="block mt-2 text-sm text-gray-500">
-              Optional: Für bessere Text-to-Speech-Stimmen. Wenn nicht gesetzt, wird die Browser-native Speech API verwendet.
+              Optional: Für bessere Text-to-Speech-Stimmen. Wenn nicht gesetzt, wird die Browser-native Speech API
+              verwendet.
             </small>
           </div>
+
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">
-              Voice-ID (optional):
-            </label>
+            <label className="block text-sm font-medium mb-2">Voice-ID (optional):</label>
             <input
               type="text"
               value={elevenlabsVoiceId}
-              onChange={(e) => {
-                const newValue = e.target.value;
-                setElevenlabsVoiceId(newValue);
-                elevenlabsVoiceIdRef.current = newValue; // Aktualisiere Ref sofort
-              }}
+              onChange={(e) => setElevenlabsVoiceId(e.target.value)}
               placeholder="z.B. pNInz6obpgDQGcFmaJgB"
               style={{
                 width: '100%',
@@ -661,58 +671,21 @@ export default function SettingsGeneralTab({
               Optional: Voice-ID für ElevenLabs. Wenn nicht gesetzt, wird eine Standard-Voice verwendet.
             </small>
           </div>
-          
-          {/* Themenzuweisung Pflicht-Einstellung */}
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={themeRequired}
-                onChange={(e) => setThemeRequired(e.target.checked)}
-                style={{ width: '1rem', height: '1rem', cursor: 'pointer' }}
-              />
-              <span style={{ fontWeight: '600', color: '#333', fontSize: '0.9rem' }}>
-                Themenzuweisung ist Pflicht
-              </span>
-            </label>
-            <small className="block mt-1 text-sm text-gray-500">
-              Wenn aktiviert, muss bei E-Mails und Telefonnotizen ein Thema ausgewählt werden.
-            </small>
-          </div>
 
-          {/* Gelöschte E-Mails endgültig löschen nach X Tagen */}
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: '#333', fontSize: '0.9rem' }}>
-              Gelöschte E-Mails endgültig löschen nach (Tage)
-            </label>
-            <input
-              type="number"
-              min={0}
-              max={36500}
-              value={permanentDeleteAfterDays}
-              onChange={(e) => setPermanentDeleteAfterDays(Math.max(0, Math.floor(Number(e.target.value)) || 0))}
-              style={{ width: '120px', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.9rem' }}
-            />
-            <small className="block mt-1 text-sm text-gray-500">
-              0 = nie (gelöscht markierte E-Mails bleiben dauerhaft im Papierkorb). Ein Cron-Job löscht E-Mails, die länger als die angegebene Anzahl Tage als gelöscht markiert sind.
-            </small>
-          </div>
-          
           <div className="flex items-center gap-4">
             <Button
               onClick={async () => {
-                // Test ElevenLabs TTS
                 const token = localStorage.getItem('mailclient_token');
                 if (!token) {
                   toast.showError('Bitte zuerst speichern, um den Test durchzuführen.');
                   return;
                 }
-                
+
                 if (!elevenlabsApiKey || !elevenlabsApiKey.trim()) {
                   toast.showError('Bitte geben Sie zuerst einen ElevenLabs API-Key ein.');
                   return;
                 }
-                
+
                 try {
                   const response = await fetch('/api/settings/test-elevenlabs', {
                     method: 'POST',
@@ -725,7 +698,7 @@ export default function SettingsGeneralTab({
                       elevenlabsVoiceId: elevenlabsVoiceId.trim() || undefined,
                     }),
                   });
-                  
+
                   if (response.ok) {
                     const audioBlob = await response.blob();
                     const audioUrl = URL.createObjectURL(audioBlob);
@@ -757,6 +730,42 @@ export default function SettingsGeneralTab({
             </Button>
           </div>
         </Card>
+      </div>
+
+      {/* Globales Aktions-Panel: Einziger Speichern-Button */}
+      <div
+        style={{
+          marginTop: '2rem',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          gap: '1rem',
+        }}
+      >
+        {_hasUnsavedChanges && (
+          <span className="text-sm text-gray-500 italic">Es gibt ungespeicherte Änderungen.</span>
+        )}
+        <Button
+          onClick={handleSaveSettings}
+          disabled={savingSettings || !_hasUnsavedChanges}
+          variant="primary"
+          className="min-w-[220px]"
+        >
+          {savingSettings ? (
+            <>
+              <div
+                className="spinner"
+                style={{ width: '16px', height: '16px', borderWidth: '2px' }}
+              />
+              <span>Speichern...</span>
+            </>
+          ) : (
+            <>
+              <FiSave size={16} />
+              <span>Alle Einstellungen speichern</span>
+            </>
+          )}
+        </Button>
       </div>
     </>
   );

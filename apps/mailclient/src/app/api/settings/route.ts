@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractTokenFromHeader, verifyToken } from '@/lib/auth';
 import { getTenantDbClient, getTenantDbClientBySlug } from '@/lib/tenant-db-client';
-import { getCompanyConfig, saveCompanyConfig, validateOpenAIApiKey, validateElevenLabsApiKey } from '@/lib/company-config';
+import { getCompanyConfig, saveCompanyConfig, validateOpenAIApiKey, validateElevenLabsApiKey, validateGeminiApiKey, isValidAiProvider } from '@/lib/company-config';
 
 /**
  * GET /api/settings
@@ -87,6 +87,9 @@ export async function GET(request: NextRequest) {
           elevenlabsEnabled: false,
           themeRequired: false,
           permanentDeleteAfterDays: 0,
+          aiProvider: 'openai',
+          geminiApiKey: null,
+          geminiModel: 'gemini-2.0-flash',
         };
       }
       
@@ -200,6 +203,9 @@ export async function GET(request: NextRequest) {
           elevenlabsEnabled: companyConfig.elevenlabsEnabled ?? false,
           themeRequired: companyConfig.themeRequired ?? false,
           permanentDeleteAfterDays: companyConfig.permanentDeleteAfterDays ?? 0,
+          aiProvider: companyConfig.aiProvider,
+          geminiApiKey: companyConfig.geminiApiKey || null,
+          geminiModel: companyConfig.geminiModel,
         };
         if (userRole === 'admin') {
           responsePayload.companyEmailFilters = companyEmailFilters;
@@ -288,6 +294,9 @@ export async function GET(request: NextRequest) {
         elevenlabsEnabled: companyConfig.elevenlabsEnabled ?? false,
         themeRequired: companyConfig.themeRequired ?? false,
         permanentDeleteAfterDays: companyConfig.permanentDeleteAfterDays ?? 0,
+        aiProvider: companyConfig.aiProvider,
+        geminiApiKey: companyConfig.geminiApiKey || null,
+        geminiModel: companyConfig.geminiModel,
       };
       if (userRole === 'admin') {
         settingsPayload.companyEmailFilters = companyEmailFilters.length > 0 ? companyEmailFilters : userSettingsFilters;
@@ -381,6 +390,9 @@ export async function PATCH(request: NextRequest) {
       elevenlabsEnabled,
       themeRequired,
       permanentDeleteAfterDays,
+      aiProvider,
+      geminiApiKey,
+      geminiModel,
     } = body;
 
     // Entferne die alte redundante Spalte 'participants_detailed' aus tableColumns
@@ -442,6 +454,25 @@ export async function PATCH(request: NextRequest) {
         }
       }
       
+      // Validierung: aiProvider (nur 'openai' oder 'google')
+      if (aiProvider !== undefined && !isValidAiProvider(aiProvider)) {
+        return NextResponse.json(
+          { error: 'AI-Provider muss "openai" oder "google" sein' },
+          { status: 400 }
+        );
+      }
+      
+      // Validierung: Gemini API-Key (falls angegeben)
+      if (geminiApiKey !== undefined) {
+        const validation = validateGeminiApiKey(geminiApiKey);
+        if (!validation.valid) {
+          return NextResponse.json(
+            { error: validation.error },
+            { status: 400 }
+          );
+        }
+      }
+      
       // Speichere Company-Config (immer, auch wenn nur andere Einstellungen geändert wurden)
       // Das stellt sicher, dass die Config immer aktualisiert wird
       const configToSave: any = {
@@ -449,6 +480,9 @@ export async function PATCH(request: NextRequest) {
         ...(openaiModel !== undefined && { openaiModel: openaiModel }),
         ...(elevenlabsApiKey !== undefined && { elevenlabsApiKey: elevenlabsApiKey || null }),
         ...(elevenlabsVoiceId !== undefined && { elevenlabsVoiceId: elevenlabsVoiceId || null }),
+        ...(aiProvider !== undefined && { aiProvider: aiProvider }),
+        ...(geminiApiKey !== undefined && { geminiApiKey: geminiApiKey || null }),
+        ...(geminiModel !== undefined && { geminiModel: geminiModel }),
       };
       
       // elevenlabsEnabled explizit behandeln, da false ein gültiger Wert ist
@@ -682,6 +716,9 @@ export async function PATCH(request: NextRequest) {
           elevenlabsEnabled: updatedCompanyConfig.elevenlabsEnabled ?? false,
           themeRequired: updatedCompanyConfig.themeRequired ?? false,
           permanentDeleteAfterDays: updatedCompanyConfig.permanentDeleteAfterDays ?? 0,
+          aiProvider: updatedCompanyConfig.aiProvider,
+          geminiApiKey: updatedCompanyConfig.geminiApiKey,
+          geminiModel: updatedCompanyConfig.geminiModel,
         },
       });
     } finally {

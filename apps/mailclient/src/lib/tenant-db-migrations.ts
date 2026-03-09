@@ -1990,6 +1990,9 @@ export async function ensureCompanyConfigTableSchema(client: PoolClient, company
           theme_required BOOLEAN DEFAULT false,
           permanent_delete_after_days INTEGER DEFAULT 0,
           email_filters JSONB DEFAULT '[]'::jsonb,
+          ai_provider VARCHAR(50) DEFAULT 'openai',
+          gemini_api_key TEXT,
+          gemini_model VARCHAR(100) DEFAULT 'gemini-2.0-flash',
           created_at TIMESTAMP DEFAULT NOW(),
           updated_at TIMESTAMP DEFAULT NOW(),
           CONSTRAINT company_config_single_row CHECK (id = 'company_config'),
@@ -2057,6 +2060,21 @@ export async function ensureCompanyConfigTableSchema(client: PoolClient, company
       if (!existingColumns.includes('updated_at')) {
         console.log(`📝 Füge updated_at-Spalte hinzu`);
         await client.query(`ALTER TABLE company_config ADD COLUMN updated_at TIMESTAMP DEFAULT NOW();`);
+      }
+      
+      if (!existingColumns.includes('ai_provider')) {
+        console.log(`📝 Füge ai_provider-Spalte hinzu`);
+        await client.query(`ALTER TABLE company_config ADD COLUMN ai_provider VARCHAR(50) DEFAULT 'openai';`);
+      }
+      
+      if (!existingColumns.includes('gemini_api_key')) {
+        console.log(`📝 Füge gemini_api_key-Spalte hinzu`);
+        await client.query(`ALTER TABLE company_config ADD COLUMN gemini_api_key TEXT;`);
+      }
+      
+      if (!existingColumns.includes('gemini_model')) {
+        console.log(`📝 Füge gemini_model-Spalte hinzu`);
+        await client.query(`ALTER TABLE company_config ADD COLUMN gemini_model VARCHAR(100) DEFAULT 'gemini-2.0-flash';`);
       }
       
       console.log(`✅ company_config-Tabelle existiert bereits`);

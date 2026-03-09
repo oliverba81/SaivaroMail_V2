@@ -223,6 +223,9 @@ export default function SettingsPage() {
     elevenlabsEnabled?: boolean;
     themeRequired?: boolean;
     permanentDeleteAfterDays?: number;
+    aiProvider?: 'openai' | 'google';
+    geminiApiKey?: string | null;
+    geminiModel?: string;
   } | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -335,6 +338,9 @@ export default function SettingsPage() {
           elevenlabsEnabled: data.settings.elevenlabsEnabled,
           themeRequired: data.settings.themeRequired,
           permanentDeleteAfterDays: data.settings.permanentDeleteAfterDays,
+          aiProvider: data.settings.aiProvider,
+          geminiApiKey: data.settings.geminiApiKey ?? null,
+          geminiModel: data.settings.geminiModel,
         });
       } else {
         setError('Ungültige Antwort vom Server');

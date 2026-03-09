@@ -9,6 +9,12 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Geändert
 
+#### Mailclient: AI-Zusammenfassung – Provider-Auswahl & Quota-Handling
+- E-Mail-Zusammenfassungen können nun wahlweise über **OpenAI** oder **Google Gemini** generiert werden (pro Firma konfigurierbar).
+- Die AI-Konfiguration (Provider, Modell, API-Keys) wird zentral in der Tabelle `company_config` gespeichert; neue Spalten: `ai_provider`, `gemini_api_key`, `gemini_model`.
+- Die Einstellungs-API (`GET/PATCH /api/settings`) liefert die neuen Felder aus und validiert alle API-Keys.
+- Bei Quota-Fehlern (HTTP 429 / `RESOURCE_EXHAUSTED` etc.) von Gemini wird eine klare Fehlermeldung zurückgegeben; das Frontend zeigt diese über einen Toast an.
+
 #### Mailclient: Rich-Text-Editor von TipTap auf TinyMCE umgestellt
 - **Nachrichtenfeld (Body) und Signatur-Editor** verwenden nun TinyMCE statt TipTap.
 - Formatierung (Fett, Kursiv, Links, Listen, Bilder etc.) und HTML-Signatur werden weiterhin korrekt angezeigt und gesendet.

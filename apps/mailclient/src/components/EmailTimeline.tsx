@@ -101,11 +101,13 @@ interface EmailTimelineProps {
   emailId: string | null;
   notes?: EmailNoteFromApi[] | null;
   onNotesChange?: () => void;
+  /** Abteilung aus Parent (loadEmailDetails) – wenn gesetzt, entfällt GET /api/emails/[id] für Department */
+  department?: { id: string; name: string } | null;
 }
 
 const MAX_NOTE_LENGTH = 2000;
 
-export default function EmailTimeline({ emailId, notes: notesProp, onNotesChange }: EmailTimelineProps) {
+export default function EmailTimeline({ emailId, notes: notesProp, onNotesChange, department: departmentProp }: EmailTimelineProps) {
   const router = useRouter();
   const toast = useToast();
   const { confirm } = useConfirm();
@@ -163,7 +165,11 @@ export default function EmailTimeline({ emailId, notes: notesProp, onNotesChange
   useEffect(() => {
     if (emailId) {
       loadEvents();
-      loadEmailDepartment();
+      if (departmentProp !== undefined) {
+        setEmailDepartment(departmentProp || null);
+      } else {
+        loadEmailDepartment();
+      }
       if (notesProp !== undefined) {
         setNotes(Array.isArray(notesProp) ? notesProp : []);
       } else {
@@ -177,7 +183,7 @@ export default function EmailTimeline({ emailId, notes: notesProp, onNotesChange
       setDeletingNoteId(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [emailId, notesProp]);
+  }, [emailId, notesProp, departmentProp]);
 
   const loadEmailDepartment = async () => {
     if (!emailId) return;

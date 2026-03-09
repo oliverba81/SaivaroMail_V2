@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { FiPaperclip, FiDownload, FiMail, FiVolume2, FiPause, FiPlay, FiPhone } from 'react-icons/fi';
 import { getDisplayFrom, getDisplayFromLabel } from '@/utils/email-helpers';
@@ -75,16 +75,57 @@ export default function EmailPreview({
   const [loadingSummary, setLoadingSummary] = useState(false);
   const hasStartedRef = useRef(false);
 
-  // Lade Body lazy, wenn E-Mail ausgewählt ist aber Body fehlt
-  useEffect(() => {
-    if (email && !email.body && email.id) {
-      loadEmailBody();
-    } else if (email?.body) {
-      setEmailBody(email.body);
-    } else {
-      setEmailBody('');
+  const loadEmailBody = useCallback(async (): Promise<string> => {
+    if (!email?.id) return '';
+    const emailIdAtStart = email.id;
+
+    try {
+      setLoadingBody(true);
+      const token = localStorage.getItem('mailclient_token');
+      if (!token) return '';
+
+      const response = await fetch(`/api/emails/${email.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.status === 401) {
+        localStorage.removeItem('mailclient_token');
+        localStorage.removeItem('mailclient_user');
+        router.push('/login');
+        return '';
+      }
+
+      const data = await response.json();
+      if (email?.id !== emailIdAtStart) return '';
+
+      if (response.ok) {
+        const body = data.email?.body || '';
+        setEmailBody(body);
+        return body;
+      }
+      const fallback = '(Inhalt konnte nicht geladen werden)';
+      setEmailBody(fallback);
+      return fallback;
+    } catch (err) {
+      console.error('Fehler beim Laden des E-Mail-Bodies:', err);
+      const fallback = '(Fehler beim Laden des Inhalts)';
+      setEmailBody(fallback);
+      return fallback;
+    } finally {
+      setLoadingBody(false);
     }
-  }, [email?.id, email?.body]);
+  }, [email?.id, router]);
+
+  // Body kommt primär aus email (loadEmailDetails). Fallback: nur wenn loading=false und Body fehlt (z.B. Fehler)
+  useEffect(() => {
+    if (email?.body) {
+      setEmailBody(email.body);
+    } else if (!email) {
+      setEmailBody('');
+    } else if (!loading && email.id) {
+      loadEmailBody();
+    }
+  }, [email?.id, email?.body, loading, loadEmailBody]);
 
   // Lade Feature-Flags beim Mount
   useEffect(() => {
@@ -133,42 +174,6 @@ export default function EmailPreview({
       setAttachments([]);
     }
   }, [email?.id]);
-
-  const loadEmailBody = async () => {
-    if (!email?.id) return;
-    
-    try {
-      setLoadingBody(true);
-      const token = localStorage.getItem('mailclient_token');
-      if (!token) {
-        return;
-      }
-
-      const response = await fetch(`/api/emails/${email.id}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (response.status === 401) {
-        localStorage.removeItem('mailclient_token');
-        localStorage.removeItem('mailclient_user');
-        router.push('/login');
-        return;
-      }
-
-      if (response.ok) {
-        const data = await response.json();
-        const body = data.email?.body || '';
-        setEmailBody(body);
-      }
-    } catch (err) {
-      console.error('Fehler beim Laden des E-Mail-Bodies:', err);
-      setEmailBody('(Fehler beim Laden des Inhalts)');
-    } finally {
-      setLoadingBody(false);
-    }
-  };
 
   const loadAttachments = async () => {
     if (!email?.id) return;
@@ -226,14 +231,13 @@ export default function EmailPreview({
     
     try {
       // Prüfe, ob Body vorhanden ist
-      let bodyToUse = emailBody;
+      let bodyToUse = emailBody || email?.body;
       if (!bodyToUse) {
         if (loadingBody) {
           setLoadingTTS(false);
           return;
         }
-        await loadEmailBody();
-        bodyToUse = emailBody;
+        bodyToUse = await loadEmailBody();
       }
       
       if (!bodyToUse || bodyToUse.trim() === '') {
@@ -497,11 +501,10 @@ export default function EmailPreview({
     if (!email?.id) return;
     
     // Prüfe, ob Body vorhanden ist
-    let bodyToUse = emailBody;
+    let bodyToUse = emailBody || email?.body;
     if (!bodyToUse) {
       if (loadingBody) return;
-      await loadEmailBody();
-      bodyToUse = emailBody;
+      bodyToUse = await loadEmailBody();
     }
     
     if (!bodyToUse || bodyToUse.trim() === '') {

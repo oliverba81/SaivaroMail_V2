@@ -1,3 +1,5 @@
+cd C:\Users\Buero-Oliver\Documents\Cursor-Projekte\SaivaroMail_v2_Git\SaivaroMail_V2
+
 ssh -i .\SaivaroMail -N -L 5433:localhost:5432 root@168.119.182.53
 
 Frontend:

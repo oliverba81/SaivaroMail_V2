@@ -18,6 +18,7 @@ Multi-Tenant Mail-Client für Firmen. Jede Firma nutzt ihre eigene isolierte Dat
 - ✅ **Tenant-Isolation**: Garantiert, dass Company A niemals Daten von Company B sieht
 - ✅ **User-Authentifizierung**: JWT-basierte Auth für Firmen-User
 - ✅ **Frontend-UI**: Login-Seite und E-Mail-Liste
+- ✅ **AI-E-Mail-Zusammenfassung**: Pro Firma konfigurierbarer AI-Provider (OpenAI oder Google Gemini) für E-Mail-Zusammenfassungen, inkl. optionaler Audio-Ausgabe über ElevenLabs oder Browser-TTS
 
 ## Multi-Tenant-Routing
 
@@ -43,6 +44,12 @@ SCC_DATABASE_URL="postgresql://user:password@localhost:5432/saivaro_scc?schema=p
 JWT_SECRET="change-this-in-production-min-32-chars"
 
 NODE_ENV=development
+
+# OpenAI – optional, für E-Mail-Zusammenfassungen
+OPENAI_API_KEY="sk-..."
+
+# Google Gemini – optional, alternative zu OpenAI
+GEMINI_API_KEY="AIza..."
 ```
 
 ### 2. Dependencies installieren

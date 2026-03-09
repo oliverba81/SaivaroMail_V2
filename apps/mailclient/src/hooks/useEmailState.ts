@@ -796,6 +796,7 @@ export function useEmailState() {
         ticketId: email.ticketId || email.ticket_id || undefined,
         isConversationThread: email.isConversationThread || email.is_conversation_thread || false,
         conversationMessageCount: email.conversationMessageCount || email.conversation_message_count || 0,
+        department: (email.assigned_departments?.[0] || email.department) || undefined,
       };
 
       // Cache Details
@@ -896,6 +897,7 @@ export function useEmailState() {
           ticketId: emailFromList.ticketId || undefined,
           isConversationThread: emailFromList.isConversationThread || false,
           conversationMessageCount: emailFromList.conversationMessageCount || 0,
+          department: emailFromList.department ?? undefined,
         };
         setSelectedEmailDetails(optimisticDetails);
         if (isUnread) {
@@ -910,15 +912,12 @@ export function useEmailState() {
       setLoadingEmailDetails(true);
     }
     
-    // Debounce loadEmailDetails (nur wenn nicht gecacht und in Liste)
-    if (!cachedDetails && emailFromList) {
-      loadEmailDetailsTimeoutRef.current = setTimeout(() => {
+    if (!cachedDetails) {
+      if (emailFromList) {
         loadEmailDetails(emailId);
-        loadEmailDetailsTimeoutRef.current = null;
-      }, 50); // 50ms Debounce für ultra-schnelle Klicks
-    } else if (!cachedDetails) {
-      // E-Mail nicht in Liste, lade sofort
-      await loadEmailDetails(emailId);
+      } else {
+        await loadEmailDetails(emailId);
+      }
     }
   }, [emails, loadEmailDetails, startTransition]);
 

@@ -26,6 +26,7 @@ interface Email {
   type?: 'email' | 'phone_note';
   phoneNumber?: string;
   hasNotes?: boolean;
+  department?: { id: string; name: string } | null;
 }
 
 interface EmailPreviewPaneProps {
@@ -256,6 +257,7 @@ function EmailPreviewPane({
               emailId={email.id}
               notes={notes}
               onNotesChange={loadNotes}
+              department={email.department}
             />
           </div>
         </>

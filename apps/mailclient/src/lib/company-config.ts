@@ -1,6 +1,8 @@
 import { PoolClient } from 'pg';
 import * as crypto from 'crypto';
 
+export type AiProvider = 'openai' | 'google';
+
 export interface CompanyConfig {
   openaiApiKey: string | null;
   openaiModel: string;
@@ -10,6 +12,9 @@ export interface CompanyConfig {
   themeRequired?: boolean;
   /** Nach wie vielen Tagen gelöscht markierte E-Mails endgültig gelöscht werden (0 = nie). */
   permanentDeleteAfterDays?: number;
+  aiProvider: AiProvider;
+  geminiApiKey: string | null;
+  geminiModel: string;
 }
 
 // Zentrale Definition der erlaubten OpenAI-Modelle
@@ -26,17 +31,37 @@ export function isValidOpenAIModel(model: string): model is OpenAIModel {
   return AVAILABLE_OPENAI_MODELS.includes(model as OpenAIModel);
 }
 
+// Zentrale Definition der erlaubten Gemini-Modelle
+export const AVAILABLE_GEMINI_MODELS = [
+  'gemini-2.0-flash',
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-1.5-flash',
+] as const;
+
+export type GeminiModel = typeof AVAILABLE_GEMINI_MODELS[number];
+
+export function isValidGeminiModel(model: string): model is GeminiModel {
+  return AVAILABLE_GEMINI_MODELS.includes(model as GeminiModel);
+}
+
+const VALID_AI_PROVIDERS: AiProvider[] = ['openai', 'google'];
+
+export function isValidAiProvider(provider: string): provider is AiProvider {
+  return VALID_AI_PROVIDERS.includes(provider as AiProvider);
+}
+
 export async function getCompanyConfig(client: PoolClient): Promise<CompanyConfig> {
   const result = await client.query(
-    `SELECT openai_api_key, openai_model, elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_enabled, theme_required, permanent_delete_after_days 
+    `SELECT openai_api_key, openai_model, elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_enabled, theme_required, permanent_delete_after_days, ai_provider, gemini_api_key, gemini_model 
      FROM company_config WHERE id = 'company_config'`
   );
   
   if (result.rows.length === 0) {
     // Erstelle Standard-Konfiguration
     await client.query(
-      `INSERT INTO company_config (id, openai_api_key, openai_model, elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_enabled, theme_required, permanent_delete_after_days) 
-       VALUES ('company_config', NULL, 'gpt-4o-mini', NULL, NULL, false, false, 0)`
+      `INSERT INTO company_config (id, openai_api_key, openai_model, elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_enabled, theme_required, permanent_delete_after_days, ai_provider, gemini_api_key, gemini_model) 
+       VALUES ('company_config', NULL, 'gpt-4o-mini', NULL, NULL, false, false, 0, 'openai', NULL, 'gemini-2.0-flash')`
     );
     return { 
       openaiApiKey: null, 
@@ -46,6 +71,9 @@ export async function getCompanyConfig(client: PoolClient): Promise<CompanyConfi
       elevenlabsEnabled: false,
       themeRequired: false,
       permanentDeleteAfterDays: 0,
+      aiProvider: 'openai',
+      geminiApiKey: null,
+      geminiModel: 'gemini-2.0-flash',
     };
   }
   
@@ -59,6 +87,9 @@ export async function getCompanyConfig(client: PoolClient): Promise<CompanyConfi
     elevenlabsEnabled: row.elevenlabs_enabled ?? false,
     themeRequired: row.theme_required ?? false,
     permanentDeleteAfterDays: row.permanent_delete_after_days != null ? Math.max(0, parseInt(String(row.permanent_delete_after_days), 10) || 0) : 0,
+    aiProvider: (row.ai_provider === 'google' ? 'google' : 'openai') as AiProvider,
+    geminiApiKey: row.gemini_api_key ? decryptApiKey(row.gemini_api_key) : null,
+    geminiModel: row.gemini_model || 'gemini-2.0-flash',
   };
   
   return config;
@@ -76,6 +107,9 @@ export async function saveCompanyConfig(
   const hasElevenLabsEnabled = 'elevenlabsEnabled' in config;
   const hasThemeRequired = 'themeRequired' in config;
   const hasPermanentDeleteAfterDays = 'permanentDeleteAfterDays' in config;
+  const hasAiProvider = 'aiProvider' in config;
+  const hasGeminiKey = 'geminiApiKey' in config;
+  const hasGeminiModel = 'geminiModel' in config;
 
   // Wenn Key explizit gesetzt wurde (auch wenn null), verschlüssele oder setze null
   const encryptedOpenAIKey = hasOpenAIKey 
@@ -85,6 +119,18 @@ export async function saveCompanyConfig(
   const encryptedElevenLabsKey = hasElevenLabsKey
     ? (config.elevenlabsApiKey && config.elevenlabsApiKey.trim() !== '' ? encryptApiKey(config.elevenlabsApiKey) : null)
     : undefined;
+  
+  const encryptedGeminiKey = hasGeminiKey
+    ? (config.geminiApiKey && config.geminiApiKey.trim() !== '' ? encryptApiKey(config.geminiApiKey) : null)
+    : undefined;
+  
+  const aiProvider = hasAiProvider && isValidAiProvider(config.aiProvider ?? '')
+    ? config.aiProvider
+    : hasAiProvider ? (config.aiProvider || 'openai') : undefined;
+  
+  const geminiModel = hasGeminiModel && config.geminiModel && isValidGeminiModel(config.geminiModel)
+    ? config.geminiModel
+    : hasGeminiModel ? (config.geminiModel || 'gemini-2.0-flash') : undefined;
   
   const openaiModel = hasOpenAIModel && config.openaiModel && isValidOpenAIModel(config.openaiModel) 
     ? config.openaiModel 
@@ -153,6 +199,24 @@ export async function saveCompanyConfig(
     paramIndex++;
   }
   
+  if (hasAiProvider && aiProvider !== undefined) {
+    updates.push(`ai_provider = $${paramIndex}`);
+    values.push(aiProvider);
+    paramIndex++;
+  }
+  
+  if (hasGeminiKey) {
+    updates.push(`gemini_api_key = $${paramIndex}`);
+    values.push(encryptedGeminiKey);
+    paramIndex++;
+  }
+  
+  if (hasGeminiModel && geminiModel !== undefined) {
+    updates.push(`gemini_model = $${paramIndex}`);
+    values.push(geminiModel);
+    paramIndex++;
+  }
+  
   if (updates.length === 0) {
     return; // Keine Änderungen
   }
@@ -160,8 +224,8 @@ export async function saveCompanyConfig(
   updates.push('updated_at = NOW()');
   
   const query = `
-    INSERT INTO company_config (id, openai_api_key, openai_model, elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_enabled, permanent_delete_after_days, updated_at)
-     VALUES ('company_config', NULL, 'gpt-4o-mini', NULL, NULL, false, 0, NOW())
+    INSERT INTO company_config (id, openai_api_key, openai_model, elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_enabled, permanent_delete_after_days, ai_provider, gemini_api_key, gemini_model, updated_at)
+     VALUES ('company_config', NULL, 'gpt-4o-mini', NULL, NULL, false, 0, 'openai', NULL, 'gemini-2.0-flash', NOW())
      ON CONFLICT (id) 
      DO UPDATE SET ${updates.join(', ')}
   `;
@@ -170,6 +234,9 @@ export async function saveCompanyConfig(
     hasOpenAIKey,
     hasElevenLabsKey,
     hasOpenAIModel,
+    hasAiProvider,
+    hasGeminiKey,
+    hasGeminiModel,
     hasElevenLabsVoiceId,
     hasElevenLabsEnabled,
     hasThemeRequired,
@@ -186,12 +253,15 @@ export async function saveCompanyConfig(
   
   // Verifiziere, dass die Daten gespeichert wurden
   const verifyResult = await client.query(
-    `SELECT openai_api_key, openai_model, elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_enabled, theme_required, permanent_delete_after_days FROM company_config WHERE id = 'company_config'`
+    `SELECT openai_api_key, openai_model, elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_enabled, theme_required, permanent_delete_after_days, ai_provider, gemini_api_key, gemini_model FROM company_config WHERE id = 'company_config'`
   );
   console.log('Verification after save:', {
     hasOpenAIKey: !!verifyResult.rows[0]?.openai_api_key,
     hasElevenLabsKey: !!verifyResult.rows[0]?.elevenlabs_api_key,
+    hasGeminiKey: !!verifyResult.rows[0]?.gemini_api_key,
     openaiModel: verifyResult.rows[0]?.openai_model,
+    geminiModel: verifyResult.rows[0]?.gemini_model,
+    aiProvider: verifyResult.rows[0]?.ai_provider,
     elevenlabsVoiceId: verifyResult.rows[0]?.elevenlabs_voice_id,
     elevenlabsEnabled: verifyResult.rows[0]?.elevenlabs_enabled,
     themeRequired: verifyResult.rows[0]?.theme_required,
@@ -285,6 +355,22 @@ export function validateElevenLabsApiKey(apiKey: string | null | undefined): { v
   // ElevenLabs API-Keys haben kein spezifisches Format, aber sollten nicht leer sein
   if (apiKey.length < 10) {
     return { valid: false, error: 'ElevenLabs API-Key muss mindestens 10 Zeichen lang sein' };
+  }
+  
+  return { valid: true };
+}
+
+export function validateGeminiApiKey(apiKey: string | null | undefined): { valid: boolean; error?: string } {
+  if (!apiKey) {
+    return { valid: true }; // Optional
+  }
+  
+  if (!apiKey.startsWith('AIza')) {
+    return { valid: false, error: 'Google Gemini API-Key beginnt typischerweise mit "AIza"' };
+  }
+  
+  if (apiKey.length < 20) {
+    return { valid: false, error: 'Google Gemini API-Key muss mindestens 20 Zeichen lang sein' };
   }
   
   return { valid: true };
