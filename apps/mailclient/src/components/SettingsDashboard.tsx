@@ -13,12 +13,9 @@ import {
 } from 'react-icons/fi';
 import Card from './Card';
 
+const DEFAULT_CARD_ORDER = ['accounts', 'general', 'filters', 'themes', 'automation', 'users', 'departments', 'contacts'] as const;
+
 interface SettingsDashboardProps {
-  accountsCount: number;
-  activeAccountsCount: number;
-  filtersCount: number;
-  usersCount: number;
-  departmentsCount: number;
   onCategoryClick: (category: string) => void;
   cardOrder?: string[];
   onCardOrderChange?: (order: string[]) => void;
@@ -29,16 +26,9 @@ interface CategoryCard {
   title: string;
   description: string;
   icon: ReactNode;
-  meta?: string;
-  count?: number;
 }
 
 export default function SettingsDashboard({
-  accountsCount,
-  activeAccountsCount,
-  filtersCount,
-  usersCount: _usersCount,
-  departmentsCount: _departmentsCount,
   onCategoryClick,
   cardOrder,
   onCardOrderChange,
@@ -51,8 +41,6 @@ export default function SettingsDashboard({
       title: 'E-Mail Konten',
       description: 'IMAP/SMTP-Konten verwalten und konfigurieren',
       icon: <FiMail size={32} />,
-      meta: `${activeAccountsCount} von ${accountsCount} aktiv`,
-      count: accountsCount,
     },
     {
       id: 'general',
@@ -65,8 +53,6 @@ export default function SettingsDashboard({
       title: 'Filter',
       description: 'E-Mail-Filter und automatische Organisation',
       icon: <FiSearch size={32} />,
-      meta: `${filtersCount} Filter`,
-      count: filtersCount,
     },
     {
       id: 'themes',
@@ -100,17 +86,16 @@ export default function SettingsDashboard({
     },
   ];
 
-  // Sortiere Kategorien nach cardOrder, falls vorhanden
-  const sortedCategories = cardOrder
-    ? [...categories].sort((a, b) => {
-        const indexA = cardOrder.indexOf(a.id);
-        const indexB = cardOrder.indexOf(b.id);
-        if (indexA === -1 && indexB === -1) return 0;
-        if (indexA === -1) return 1;
-        if (indexB === -1) return -1;
-        return indexA - indexB;
-      })
-    : categories;
+  // Sortiere Kategorien nach cardOrder (DEFAULT_CARD_ORDER wenn nicht gesetzt)
+  const effectiveOrder = cardOrder ?? [...DEFAULT_CARD_ORDER];
+  const sortedCategories = [...categories].sort((a, b) => {
+    const indexA = effectiveOrder.indexOf(a.id);
+    const indexB = effectiveOrder.indexOf(b.id);
+    if (indexA === -1 && indexB === -1) return 0;
+    if (indexA === -1) return 1;
+    if (indexB === -1) return -1;
+    return indexA - indexB;
+  });
 
   const handleDragStart = (index: number) => {
     setDraggedIndex(index);
@@ -193,11 +178,6 @@ export default function SettingsDashboard({
               <div className="text-sm text-gray-500 mb-4 leading-relaxed">
                 {category.description}
               </div>
-              {category.meta && (
-                <div className="flex items-center gap-2 text-sm text-gray-500 mt-auto">
-                  <span>{category.meta}</span>
-                </div>
-              )}
             </div>
             {/* Hover-Effekt Linie oben */}
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-primary-hover transform scale-x-0 transition-transform duration-300 group-hover:scale-x-100" />

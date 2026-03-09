@@ -27,6 +27,22 @@ export async function middleware(request: NextRequest) {
     // companyId wird später in den API-Routes aus dem Slug aufgelöst
   }
 
+  // 1b. Query-Parameter ?company=slug (Fallback für Windows/ohne hosts-Setup)
+  if (!companySlug && !companyId) {
+    const slugParam = request.nextUrl.searchParams.get('company');
+    if (slugParam && typeof slugParam === 'string' && /^[a-z0-9-]+$/.test(slugParam)) {
+      companySlug = slugParam;
+    }
+  }
+
+  // 1c. Cookie saivaro_company (wird gesetzt, wenn ?company= verwendet wird)
+  if (!companySlug && !companyId) {
+    const cookieSlug = request.cookies.get('saivaro_company')?.value;
+    if (cookieSlug && /^[a-z0-9-]+$/.test(cookieSlug)) {
+      companySlug = cookieSlug;
+    }
+  }
+
   // 2. Header-Parsing (X-Company-Id oder X-Company-Slug)
   if (!companyId) {
     const headerCompanyId = request.headers.get('x-company-id');

@@ -54,17 +54,12 @@ export default function StorageUsage({ companyId }: StorageUsageProps) {
       const params = refresh ? { refresh: 'true' } : {};
       console.log(`[StorageUsage] Lade Daten von: ${url}`, params);
       const response = await api.get(url, { params });
-      console.log(`[StorageUsage] Response erhalten:`, response.status, response.data);
       setStorageUsage(response.data);
     } catch (err: any) {
-      console.error('Fehler beim Laden der Speicherplatz-Daten:', err);
-      console.error('Error details:', {
-        message: err.message,
-        response: err.response?.data,
-        status: err.response?.status,
-        statusText: err.response?.statusText,
-      });
-      
+      const code = err.code || err.response?.status;
+      const msg = err.message || err.response?.data?.message || String(err.response?.data);
+      console.error(`[StorageUsage] Fehler: ${msg} (code: ${code})`);
+
       // Detaillierte Fehlermeldung extrahieren
       let errorMessage = 'Fehler beim Laden der Speicherplatz-Daten';
       
@@ -87,7 +82,12 @@ export default function StorageUsage({ companyId }: StorageUsageProps) {
       if (err.response?.status) {
         errorMessage = `[${err.response.status}] ${errorMessage}`;
       }
-      
+
+      // Hinweis bei fehlender Tenant-DB
+      if (errorMessage.includes('does not exist') || errorMessage.includes('existiert nicht')) {
+        errorMessage += '. Bitte klicken Sie auf "DB-Config aktualisieren" in der Datenbank-Konfiguration oben, um die Tenant-Datenbank anzulegen.';
+      }
+
       setError(errorMessage);
     } finally {
       setLoading(false);

@@ -374,7 +374,7 @@ export default function CompaniesPage() {
                         Bearbeiten
                       </button>
                       <a
-                        href={`http://${company.slug}.localhost:3000`}
+                        href={`http://localhost:3010?company=${encodeURIComponent(company.slug)}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="btn"
@@ -384,6 +384,7 @@ export default function CompaniesPage() {
                           textDecoration: 'none',
                           display: 'inline-block'
                         }}
+                        title={`Mailclient für ${company.name} öffnen`}
                       >
                         Mailclient
                       </a>

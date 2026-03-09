@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTenantDbClient } from '@/lib/tenant-db-client';
+import { getTenantDbClient, getTenantDbClientBySlug } from '@/lib/tenant-db-client';
 import { extractTokenFromHeader, verifyToken } from '@/lib/auth';
 import { getCompanyFeatures } from '@/lib/company-features';
-import { getCompanyDbConfigBySlug } from '@/lib/scc-client';
+import { getCompanyIdBySlug } from '@/lib/scc-client';
 import { getCompanyConfig } from '@/lib/company-config';
-import { ensureCompanyConfigTableSchema } from '@/lib/tenant-db-migrations';
 
 /**
  * POST /api/text-to-speech
@@ -62,20 +61,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Tenant-Context companyId auflösen
-  let resolvedCompanyId = companyId;
-  
+  // resolvedCompanyId für getCompanyFeatures (Feature-Flag-Prüfung)
+  let resolvedCompanyId: string | null = companyId;
   if (!resolvedCompanyId && companySlug) {
-    try {
-      const dbConfig = await getCompanyDbConfigBySlug(companySlug);
-      if (dbConfig) {
-        resolvedCompanyId = dbConfig.companyId;
-      }
-    } catch (err) {
-      console.error('Fehler beim Auflösen von companySlug:', err);
-    }
+    resolvedCompanyId = await getCompanyIdBySlug(companySlug);
   }
-
   if (!resolvedCompanyId) {
     return NextResponse.json(
       { error: 'Company-ID konnte nicht aufgelöst werden' },
@@ -117,13 +107,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Tenant-DB-Client holen
-  const client = await getTenantDbClient(resolvedCompanyId);
+  // Tenant-DB-Client holen (getTenantDbClientBySlug nutzt Cache, vermeidet doppelten SCC-Call)
+  let client;
+  if (companyId) {
+    client = await getTenantDbClient(companyId);
+  } else if (companySlug) {
+    client = await getTenantDbClientBySlug(companySlug);
+  } else {
+    return NextResponse.json(
+      { error: 'Company-ID oder Slug erforderlich' },
+      { status: 400 }
+    );
+  }
 
   try {
-    // Stelle sicher, dass company_config Tabelle existiert
-    await ensureCompanyConfigTableSchema(client, resolvedCompanyId);
-    
     // Lade Company-Config
     const companyConfig = await getCompanyConfig(client);
     

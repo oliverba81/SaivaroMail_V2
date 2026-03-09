@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractTokenFromHeader, verifyToken } from '@/lib/auth';
-import { getTenantDbClient } from '@/lib/tenant-db-client';
+import { getTenantDbClient, getTenantDbClientBySlug } from '@/lib/tenant-db-client';
 import { getCompanyConfig, saveCompanyConfig, validateOpenAIApiKey, validateElevenLabsApiKey } from '@/lib/company-config';
-import { ensureCompanyConfigTableSchema } from '@/lib/tenant-db-migrations';
 
 /**
  * GET /api/settings
@@ -60,31 +59,36 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Tenant-Context companyId auflösen
-    let resolvedCompanyId = companyId;
-    if (!resolvedCompanyId && companySlug) {
-      const { getCompanyDbConfigBySlug } = await import('@/lib/scc-client');
-      const dbConfig = await getCompanyDbConfigBySlug(companySlug);
-      if (dbConfig) {
-        resolvedCompanyId = dbConfig.companyId;
-      }
-    }
-
-    if (!resolvedCompanyId) {
+    // Tenant-DB-Client holen (getTenantDbClientBySlug nutzt Cache, vermeidet doppelten SCC-Call)
+    let client;
+    if (companyId) {
+      client = await getTenantDbClient(companyId);
+    } else if (companySlug) {
+      client = await getTenantDbClientBySlug(companySlug);
+    } else {
       return NextResponse.json(
         { error: 'Company-ID oder Slug erforderlich' },
         { status: 400 }
       );
     }
 
-    const client = await getTenantDbClient(resolvedCompanyId);
-
     try {
-      // Stelle sicher, dass company_config Tabelle existiert
-      await ensureCompanyConfigTableSchema(client, resolvedCompanyId);
-      
-      // Lade Company-Config
-      const companyConfig = await getCompanyConfig(client);
+      // Lade Company-Config (Fallback bei Schema-Problemen)
+      let companyConfig;
+      try {
+        companyConfig = await getCompanyConfig(client);
+      } catch (configErr: any) {
+        console.error('getCompanyConfig fehlgeschlagen, verwende Standard-Config:', configErr?.message);
+        companyConfig = {
+          openaiApiKey: null,
+          openaiModel: 'gpt-4o-mini',
+          elevenlabsApiKey: null,
+          elevenlabsVoiceId: null,
+          elevenlabsEnabled: false,
+          themeRequired: false,
+          permanentDeleteAfterDays: 0,
+        };
+      }
       
       // Company-Filter und Benutzer-Filter-Sichtbarkeit laden
       let companyEmailFilters: any[] = [];
@@ -123,16 +127,25 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      const userRow = await client.query(
-        `SELECT role, visible_filter_ids FROM users WHERE id = $1`,
-        [payload.sub]
-      );
-      const userRole = userRow.rows[0]?.role;
-      // null = nicht gesetzt → Benutzer sieht alle Company-Filter (Rückwärtskompatibilität); [] = keine; [...] = nur diese
+      let userRole: string;
       let visibleFilterIds: string[] | null = null;
-      if (userRow.rows[0]?.visible_filter_ids != null) {
-        const raw = userRow.rows[0].visible_filter_ids;
-        visibleFilterIds = Array.isArray(raw) ? raw.map((id: any) => String(id)) : [];
+      try {
+        const userRow = await client.query(
+          `SELECT role, visible_filter_ids FROM users WHERE id = $1`,
+          [payload.sub]
+        );
+        userRole = userRow.rows[0]?.role || 'user';
+        if (userRow.rows[0]?.visible_filter_ids != null) {
+          const raw = userRow.rows[0].visible_filter_ids;
+          visibleFilterIds = Array.isArray(raw) ? raw.map((id: any) => String(id)) : [];
+        }
+      } catch (userQueryErr: any) {
+        if (userQueryErr?.message?.includes('visible_filter_ids')) {
+          const fallbackRow = await client.query(`SELECT role FROM users WHERE id = $1`, [payload.sub]);
+          userRole = fallbackRow.rows[0]?.role || 'user';
+        } else {
+          throw userQueryErr;
+        }
       }
       
       // Lade Benutzereinstellungen
@@ -247,15 +260,16 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Sidebar-Filter: Company-Filter nach visible_filter_ids; Fallback auf user_settings
+      // Sidebar-Filter: Company-Filter nach visible_filter_ids
+      // Admins sehen immer alle Filter. Normale Benutzer nur die explizit zugewiesenen.
       const userSettingsFilters = result.rows[0].email_filters != null
         ? (Array.isArray(result.rows[0].email_filters) ? result.rows[0].email_filters : [])
         : [];
       const companyFiltersForUser = companyEmailFilters.length > 0 ? companyEmailFilters : userSettingsFilters;
       let emailFiltersForResponse: any[];
-      if (visibleFilterIds === null) {
+      if (userRole === 'admin') {
         emailFiltersForResponse = companyFiltersForUser;
-      } else if (visibleFilterIds.length === 0) {
+      } else if (visibleFilterIds === null || visibleFilterIds.length === 0) {
         emailFiltersForResponse = [];
       } else {
         emailFiltersForResponse = companyFiltersForUser.filter((f: any) => f.id && visibleFilterIds!.includes(String(f.id)));
@@ -352,23 +366,6 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Tenant-Context companyId auflösen
-    let resolvedCompanyId = companyId;
-    if (!resolvedCompanyId && companySlug) {
-      const { getCompanyDbConfigBySlug } = await import('@/lib/scc-client');
-      const dbConfig = await getCompanyDbConfigBySlug(companySlug);
-      if (dbConfig) {
-        resolvedCompanyId = dbConfig.companyId;
-      }
-    }
-
-    if (!resolvedCompanyId) {
-      return NextResponse.json(
-        { error: 'Company-ID oder Slug erforderlich' },
-        { status: 400 }
-      );
-    }
-
     const body = await request.json();
     let { 
       fetchIntervalMinutes, 
@@ -398,12 +395,31 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const client = await getTenantDbClient(resolvedCompanyId);
+    // Tenant-DB-Client holen (getTenantDbClientBySlug nutzt Cache, vermeidet doppelten SCC-Call)
+    let client;
+    let resolvedCompanyId: string;
+    if (companyId) {
+      client = await getTenantDbClient(companyId);
+      resolvedCompanyId = companyId;
+    } else if (companySlug) {
+      client = await getTenantDbClientBySlug(companySlug);
+      const { getCompanyIdBySlug } = await import('@/lib/scc-client');
+      const id = await getCompanyIdBySlug(companySlug);
+      if (!id) {
+        return NextResponse.json(
+          { error: 'Company-ID konnte nicht aufgelöst werden' },
+          { status: 400 }
+        );
+      }
+      resolvedCompanyId = id;
+    } else {
+      return NextResponse.json(
+        { error: 'Company-ID oder Slug erforderlich' },
+        { status: 400 }
+      );
+    }
 
     try {
-      // Stelle sicher, dass company_config Tabelle existiert
-      await ensureCompanyConfigTableSchema(client, resolvedCompanyId);
-      
       // Validierung: OpenAI API-Key (falls angegeben)
       if (openaiApiKey !== undefined) {
         const validation = validateOpenAIApiKey(openaiApiKey);

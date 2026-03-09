@@ -35,7 +35,7 @@ const jobs = new Map<string, JobEntry>();
 const REFRESH_INTERVAL_MS = parseInt(process.env.CRON_REFRESH_INTERVAL_MS || '300000', 10);
 
 // Mailclient-URL
-const MAILCLIENT_URL = process.env.MAILCLIENT_URL || 'http://localhost:3000';
+const MAILCLIENT_URL = process.env.MAILCLIENT_URL || 'http://localhost:3010';
 
 // WICHTIG: SERVICE_TOKEN wird erst beim ersten Zugriff gelesen, nicht beim Import!
 // Dies ermöglicht, dass die .env-Datei VOR dem Import geladen werden kann
@@ -203,6 +203,7 @@ async function executeScheduledRule(companyId: string, ruleId: string, ruleName?
  */
 async function executeEmailFetch(companyId: string, userId: string) {
   const startTime = new Date();
+  log('INFO', `⏰ [E-Mail-Abruf] Starte Abruf für User ${userId}...`);
 
   // Logge Job-Start
   let logId: string | undefined;
@@ -265,7 +266,21 @@ async function executeEmailFetch(companyId: string, userId: string) {
       }
     }
 
-    log('INFO', `E-Mail-Abruf für User ${userId} erfolgreich: ${result.totalCount || 0} E-Mails abgerufen`);
+    const totalCount = result.totalCount || 0;
+    const results = result.results || [];
+    const accountCount = results.length;
+    const errors = results.filter((r: any) => r.error).map((r: any) => `${r.accountName}: ${r.error}`);
+    let msg: string;
+    if (accountCount === 0) {
+      msg = `⚠️ [E-Mail-Abruf] Keine E-Mail-Konten konfiguriert. Bitte Konto in den Einstellungen hinzufügen.`;
+    } else if (errors.length > 0) {
+      msg = `⚠️ [E-Mail-Abruf] Fertig: ${totalCount} E-Mail(s) abgerufen, ${errors.length} Fehler: ${errors.join('; ')}`;
+    } else if (totalCount > 0) {
+      msg = `✅ [E-Mail-Abruf] Fertig: ${totalCount} neue E-Mail(s) von ${accountCount} Konto/Konten abgerufen`;
+    } else {
+      msg = `✅ [E-Mail-Abruf] Fertig: Keine neuen E-Mails in ${accountCount} Konto/Konten`;
+    }
+    log('INFO', msg);
   } catch (error: any) {
     // Logge Job-Fehler
     if (logId) {
@@ -295,12 +310,13 @@ async function executeEmailFetch(companyId: string, userId: string) {
  * Generiert Cron-Ausdruck für fetch_interval_minutes
  */
 function generateCronExpression(fetchIntervalMinutes: number): string {
-  if (fetchIntervalMinutes < 60) {
+  const mins = Math.floor(Number(fetchIntervalMinutes)) || 5;
+  if (mins < 60) {
     // Alle X Minuten
-    return `*/${fetchIntervalMinutes} * * * *`;
+    return `*/${mins} * * * *`;
   } else {
     // Alle X Stunden
-    const hours = Math.floor(fetchIntervalMinutes / 60);
+    const hours = Math.floor(mins / 60) || 1;
     return `0 */${hours} * * *`;
   }
 }
@@ -551,6 +567,22 @@ export async function startCronService() {
 
   // Initialer Job-Load
   await refreshJobs();
+
+  // Sofort-Abruf: E-Mail-Jobs einmalig sofort ausführen (statt auf ersten Cron-Tick zu warten)
+  const emailFetchEntries = Array.from(jobs.entries()).filter(
+    ([_, entry]) => entry.config.type === 'email_fetch' && entry.config.userId
+  );
+  if (emailFetchEntries.length > 0) {
+    log('INFO', `📬 Starte sofortigen E-Mail-Abruf für ${emailFetchEntries.length} User...`);
+    for (const [_, entry] of emailFetchEntries) {
+      const { companyId, userId } = entry.config;
+      if (companyId && userId) {
+        executeEmailFetch(companyId, userId).catch((err) =>
+          log('ERROR', `Sofort-Abruf fehlgeschlagen für User ${userId}:`, err?.message)
+        );
+      }
+    }
+  }
 
   // Periodischer Refresh
   const refreshInterval = setInterval(refreshJobs, REFRESH_INTERVAL_MS);

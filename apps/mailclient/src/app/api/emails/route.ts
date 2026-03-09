@@ -4,7 +4,7 @@ import { extractTokenFromHeader, verifyToken } from '@/lib/auth';
 import nodemailer from 'nodemailer';
 import { generateTicketId, extractTicketIdFromSubject } from '@/lib/ticket-id-generator';
 import { getCompanyConfig } from '@/lib/company-config';
-import { ensureCompanyConfigTableSchema, EMAIL_REPLY_LOCK_TTL_SECONDS } from '@/lib/tenant-db-migrations';
+import { EMAIL_REPLY_LOCK_TTL_SECONDS } from '@/lib/tenant-db-migrations';
 import { looksLikeHtml, stripHtml } from '@/utils/signature-placeholders';
 
 /**
@@ -640,23 +640,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Tenant-Context companyId auflösen
-    let resolvedCompanyId = companyId;
-    if (!resolvedCompanyId && companySlug) {
-      const { getCompanyDbConfigBySlug } = await import('@/lib/scc-client');
-      const dbConfig = await getCompanyDbConfigBySlug(companySlug);
-      if (dbConfig) {
-        resolvedCompanyId = dbConfig.companyId;
-      }
-    }
-
-    // Tenant-DB-Client holen
+    // Tenant-DB-Client holen (getTenantDbClientBySlug nutzt Cache, vermeidet doppelten SCC-Call)
     let client;
-    if (resolvedCompanyId) {
-      client = await getTenantDbClient(resolvedCompanyId);
+    let resolvedCompanyId: string;
+    if (companyId) {
+      client = await getTenantDbClient(companyId);
+      resolvedCompanyId = companyId;
     } else if (companySlug) {
       const { getTenantDbClientBySlug } = await import('@/lib/tenant-db-client');
       client = await getTenantDbClientBySlug(companySlug);
+      const { getCompanyIdBySlug } = await import('@/lib/scc-client');
+      const id = await getCompanyIdBySlug(companySlug);
+      if (!id) {
+        return NextResponse.json(
+          { error: 'Company-ID konnte nicht aufgelöst werden' },
+          { status: 400 }
+        );
+      }
+      resolvedCompanyId = id;
     } else {
       return NextResponse.json(
         { error: 'Company-ID oder Slug erforderlich' },
@@ -665,29 +666,6 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      // Falls resolvedCompanyId noch null ist (nur bei companySlug), löse es erneut auf
-      if (!resolvedCompanyId && companySlug) {
-        const { getCompanyDbConfigBySlug } = await import('@/lib/scc-client');
-        const dbConfig = await getCompanyDbConfigBySlug(companySlug);
-        if (dbConfig) {
-          resolvedCompanyId = dbConfig.companyId;
-        }
-      }
-      // Falls immer noch null, verwende companyId aus payload (falls vorhanden)
-      if (!resolvedCompanyId && payload.companyId) {
-        resolvedCompanyId = payload.companyId;
-      }
-      // Falls immer noch null, Fehler zurückgeben (sollte nicht passieren)
-      if (!resolvedCompanyId) {
-        return NextResponse.json(
-          { error: 'Company-ID konnte nicht aufgelöst werden' },
-          { status: 400 }
-        );
-      }
-      
-      // Stelle sicher, dass company_config Tabelle existiert
-      await ensureCompanyConfigTableSchema(client, resolvedCompanyId);
-      
       // Lade Company-Config für themeRequired-Validierung
       const companyConfig = await getCompanyConfig(client);
       

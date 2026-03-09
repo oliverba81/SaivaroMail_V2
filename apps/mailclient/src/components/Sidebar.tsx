@@ -773,8 +773,8 @@ export default function Sidebar({}: SidebarProps = {}) {
         ) : (
           <div className="p-4 text-center text-gray-600 text-sm">
             <p className="mb-2">Keine Filter vorhanden</p>
-            <Link href="/emails/settings">
-              <Button variant="secondary" className="text-sm">
+            <Link href="/emails/settings?tab=filters">
+              <Button variant="secondary" className="text-sm" type="button">
                 Filter erstellen
               </Button>
             </Link>

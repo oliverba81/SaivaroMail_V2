@@ -13,15 +13,22 @@ export async function POST(request: NextRequest) {
     let companyId: string | null = null;
     let companySlug: string | null = null;
     
-    // 1. Subdomain-Parsing
-    const hostname = request.headers.get('host') || '';
-    const subdomain = hostname.split('.')[0];
-    
-    if (subdomain && subdomain !== 'localhost' && subdomain !== 'www') {
-      companySlug = subdomain;
+    // 1. Query-Parameter ?company=slug (Priorität bei localhost/127.0.0.1)
+    const slugParam = request.nextUrl.searchParams.get('company');
+    if (slugParam && typeof slugParam === 'string' && /^[a-z0-9-]+$/.test(slugParam)) {
+      companySlug = slugParam;
+    }
+
+    // 2. Subdomain-Parsing (falls kein Query-Param)
+    if (!companySlug) {
+      const hostname = request.headers.get('host') || '';
+      const subdomain = hostname.split('.')[0];
+      if (subdomain && subdomain !== 'localhost' && subdomain !== 'www' && !/^\d+$/.test(subdomain)) {
+        companySlug = subdomain;
+      }
     }
     
-    // 2. Header-Parsing
+    // 3. Header-Parsing
     const headerCompanyId = request.headers.get('x-company-id');
     const headerCompanySlug = request.headers.get('x-company-slug');
     
@@ -31,7 +38,7 @@ export async function POST(request: NextRequest) {
       companySlug = headerCompanySlug;
     }
     
-    // 3. JWT-Token-Parsing (falls vorhanden)
+    // 4. JWT-Token-Parsing (falls vorhanden)
     if (!companyId) {
       const authHeader = request.headers.get('authorization');
       if (authHeader?.startsWith('Bearer ')) {
@@ -185,6 +192,8 @@ export async function POST(request: NextRequest) {
       errorMessage = `Datenbankkonfiguration fehlt: ${error.message}`;
     } else if (error.message?.includes('ECONNREFUSED') || error.message?.includes('connect')) {
       errorMessage = 'Datenbankverbindungsfehler: Datenbankserver ist nicht erreichbar. Bitte prüfen Sie, ob PostgreSQL läuft.';
+    } else if (error.message?.includes('self-signed certificate') || error.message?.includes('self signed')) {
+      errorMessage = 'Datenbank: Selbstsigniertes Zertifikat. Setzen Sie SCC_DB_ACCEPT_SELF_SIGNED=true in der .env.';
     }
     
     return NextResponse.json(

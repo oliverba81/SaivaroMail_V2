@@ -42,9 +42,10 @@ export function extractTokenFromHeader(authHeader: string | null): string | null
  * Verifiziert ein Service-Token (für interne API-Aufrufe)
  */
 export function verifyServiceToken(token: string): boolean {
-  const serviceToken = process.env.CRON_SERVICE_TOKEN;
-  
-  if (!serviceToken || serviceToken.trim() === '') {
+  const raw = process.env.CRON_SERVICE_TOKEN || '';
+  const serviceToken = raw.replace(/^["']|["']$/g, '').trim();
+
+  if (!serviceToken) {
     // Wenn kein Service-Token konfiguriert ist, wird die Validierung deaktiviert
     // (für Development)
     console.warn('⚠️  CRON_SERVICE_TOKEN ist nicht gesetzt. Service-Token-Validierung deaktiviert.');
@@ -62,7 +63,8 @@ export function verifyServiceToken(token: string): boolean {
     return false;
   }
 
-  const isValid = token === serviceToken;
+  const cleanToken = (token || '').replace(/^["']|["']$/g, '').trim();
+  const isValid = cleanToken === serviceToken;
   if (!isValid) {
     console.error('❌ Service-Token-Validierung fehlgeschlagen: Token stimmt nicht überein');
     console.error(`   Erwartet: ${serviceToken.substring(0, 10)}... (${serviceToken.length} Zeichen)`);

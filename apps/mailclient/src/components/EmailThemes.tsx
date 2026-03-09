@@ -130,7 +130,14 @@ export default function EmailThemes() {
         return;
       }
 
-      const data = await response.json();
+      const text = await response.text();
+      let data: { error?: string; theme?: unknown } = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        setError('Fehler beim Speichern des Themas (ungültige Antwort)');
+        return;
+      }
 
       if (!response.ok) {
         setError(data.error || 'Fehler beim Speichern des Themas');
@@ -178,8 +185,15 @@ export default function EmailThemes() {
       }
 
       if (!response.ok) {
-        const data = await response.json();
-        setError(data.error || 'Fehler beim Löschen des Themas');
+        const text = await response.text();
+        let message = 'Fehler beim Löschen des Themas';
+        try {
+          const data = JSON.parse(text);
+          if (data?.error) message = data.error;
+        } catch {
+          // Antwort war kein JSON (z. B. HTML-Fehlerseite)
+        }
+        setError(message);
         return;
       }
 

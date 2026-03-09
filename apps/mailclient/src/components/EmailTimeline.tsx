@@ -263,11 +263,14 @@ export default function EmailTimeline({ emailId, notes: notesProp, onNotesChange
         setEvents(uniqueEvents);
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Unbekannter Fehler' }));
-        console.error('Fehler beim Laden der Events:', errorData);
-        setError('Fehler beim Laden der Timeline: ' + (errorData.error || 'Unbekannter Fehler'));
+        const message = errorData.error || (response.status === 404 ? 'Timeline nicht verfügbar' : 'Unbekannter Fehler');
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Fehler beim Laden der Events:', response.status, errorData);
+        }
+        setError('Fehler beim Laden der Timeline: ' + message);
       }
     } catch (err: any) {
-      setError('Fehler beim Laden der Timeline: ' + err.message);
+      setError('Fehler beim Laden der Timeline: ' + (err?.message || 'Netzwerkfehler'));
     } finally {
       setLoading(false);
     }

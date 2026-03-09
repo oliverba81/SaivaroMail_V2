@@ -150,31 +150,32 @@ export class ProvisioningService {
   }
 
   /**
-   * Generiert DB-Verbindungsdaten (Mock für lokale Entwicklung)
-   * Für lokale Tests: Verwendet lokale PostgreSQL und erstellt die DB tatsächlich
+   * Generiert DB-Verbindungsdaten
+   * Leitet Host/Port/SSL aus DATABASE_URL ab (z. B. Hetzner), Fallback: localhost
    */
   private async generateMockDbConfig(companyId: string, _request: ProvisionDatabaseRequest) {
-    // Für lokale Entwicklung: Verwende lokale PostgreSQL
-    const dbHost = 'localhost';
-    const dbPort = 5432; // Standard PostgreSQL-Port
     const dbName = `tenant_${companyId.replace(/-/g, '_')}`;
 
-    // Parse DATABASE_URL aus Umgebungsvariable (falls vorhanden)
-    // Format: postgresql://user:password@host:port/database
+    let dbHost = 'localhost';
+    let dbPort = 5432;
     let dbUser = 'saivaro';
     let dbPassword = 'saivaro_dev_password';
+    let dbSslMode = 'prefer';
 
     if (process.env.DATABASE_URL) {
       try {
         const url = new URL(process.env.DATABASE_URL);
         dbUser = url.username || dbUser;
         dbPassword = url.password || dbPassword;
+        dbHost = url.hostname || dbHost;
+        dbPort = url.port ? parseInt(url.port, 10) : 5432;
+        const sslModeParam = url.searchParams.get('sslmode') || url.searchParams.get('ssl');
+        dbSslMode = sslModeParam === 'require' ? 'require' : 'prefer';
       } catch (e) {
         // Fallback zu Standard-Werten
       }
     }
 
-    // Erstelle die Datenbank, falls sie nicht existiert
     await this.createDatabaseIfNotExists(dbHost, dbPort, dbUser, dbPassword, dbName);
 
     return {
@@ -183,7 +184,7 @@ export class ProvisioningService {
       dbName,
       dbUser,
       dbPassword,
-      dbSslMode: 'prefer', // Für lokale Entwicklung
+      dbSslMode,
     };
   }
 
@@ -198,13 +199,14 @@ export class ProvisioningService {
     dbName: string
   ) {
     const { Pool } = await import('pg');
+    const useSsl = host !== 'localhost' && host !== '127.0.0.1';
     const adminPool = new Pool({
       host,
       port,
       user,
       password,
-      database: 'postgres', // Verbinde zur Standard-DB
-      ssl: false,
+      database: 'postgres',
+      ssl: useSsl ? { rejectUnauthorized: false } : false,
     });
 
     try {
@@ -222,7 +224,16 @@ export class ProvisioningService {
       }
     } catch (error: any) {
       console.error(`Fehler beim Erstellen der Datenbank ${dbName}:`, error.message);
-      // Wir werfen den Fehler nicht weiter, da die DB möglicherweise bereits existiert
+      // Permission denied (42501) oder insufficient privilege (28P01) → CREATEDB fehlt
+      const code = error?.code ?? '';
+      const msg = (error?.message ?? '').toLowerCase();
+      const needsCreatedb = code === '42501' || code === '28P01' || msg.includes('permission denied') || msg.includes('createdb');
+      const hint = needsCreatedb
+        ? ' Bitte auf dem Server ausführen: ALTER USER saivaromail_user CREATEDB;'
+        : '';
+      throw new Error(
+        `Datenbank ${dbName} konnte nicht erstellt werden: ${error?.message ?? error}${hint}`
+      );
     } finally {
       await adminPool.end();
     }

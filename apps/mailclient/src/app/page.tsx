@@ -11,22 +11,24 @@ export default function Home() {
     // Prüfe, ob Tenant-Context gesetzt ist (über Middleware)
     const hostname = window.location.hostname;
     const subdomain = hostname.split('.')[0];
-    
+    const companyParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('company') : null;
+
     // Prüfe, ob User eingeloggt ist
     const token = localStorage.getItem('mailclient_token');
     if (token) {
-      router.push('/emails');
+      const preserveParams = companyParam ? `?company=${encodeURIComponent(companyParam)}` : '';
+      router.push(`/emails${preserveParams}`);
       return;
     }
 
-    // Wenn Subdomain vorhanden (nicht localhost direkt), zur Login-Seite
-    if (subdomain && subdomain !== 'localhost' && subdomain !== 'www') {
-      // Kurze Verzögerung, damit Middleware den Context setzen kann
+    // Subdomain ODER ?company=slug vorhanden → zur Login-Seite
+    if ((subdomain && subdomain !== 'localhost' && subdomain !== 'www') || companyParam) {
+      const loginUrl = companyParam ? `/login?company=${encodeURIComponent(companyParam)}` : '/login';
       setTimeout(() => {
-        router.push('/login');
+        router.push(loginUrl);
       }, 100);
     } else {
-      // Keine Subdomain → Info-Seite anzeigen
+      // Keine Subdomain und kein company-Param → Info-Seite anzeigen
       setShowInfo(true);
     }
   }, [router]);

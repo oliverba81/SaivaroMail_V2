@@ -4,8 +4,8 @@
  */
 
 import { Pool } from 'pg';
-import type { CompanyDbConfig } from '@saivaro/shared';
-import { ensureUsersTableSchema, ensureEmailReplyLocksTableSchema } from './tenant-db-migrations';
+import type { CompanyDbConfig } from '@/lib/scc-client';
+import { ensureUsersTableSchema, ensureEmailReplyLocksTableSchema, ensureCompanyConfigTableSchema } from './tenant-db-migrations';
 
 // Connection-Pools pro Company (wird nicht gecacht, da Pools persistent sind)
 const dbPools = new Map<string, Pool>();
@@ -69,13 +69,14 @@ export async function getOrCreatePool(companyId: string, dbConfig: CompanyDbConf
       validateDbConfig(dbConfig, companyId);
 
       // 5. Pool erstellen
+      const needsSsl = /require|verify/i.test(String(dbConfig.dbSslMode || ''));
       const pool = new Pool({
         host: String(dbConfig.dbHost),
         port: Number(dbConfig.dbPort) || 5432,
         database: String(dbConfig.dbName),
         user: String(dbConfig.dbUser),
         password: String(dbConfig.dbPassword), // Explizit als String casten
-        ssl: dbConfig.dbSslMode === 'require' ? { rejectUnauthorized: false } : false,
+        ssl: needsSsl ? { rejectUnauthorized: false } : false,
         max: 20, // Max. Connections im Pool
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: 2000,
@@ -88,6 +89,7 @@ export async function getOrCreatePool(companyId: string, dbConfig: CompanyDbConf
           console.log(`🔄 [${companyId}] Führe Schema-Migration beim Pool-Erstellen durch...`);
           await ensureUsersTableSchema(migrationClient, companyId);
           await ensureEmailReplyLocksTableSchema(migrationClient, companyId);
+          await ensureCompanyConfigTableSchema(migrationClient, companyId);
           migratedCompanies.add(companyId); // Set VOR Pool-Set
           console.log(`✅ [${companyId}] Schema-Migration erfolgreich abgeschlossen`);
         } catch (error: any) {

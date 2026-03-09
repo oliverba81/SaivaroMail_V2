@@ -78,7 +78,7 @@ console.log(`[CronService] ========================================`);
 // WICHTIG: Dynamischer Import NACH dem Laden der .env-Datei!
 // scheduled-trigger-service.ts liest process.env.CRON_SERVICE_TOKEN beim Import
 // Daher müssen wir die .env-Datei VOR dem Import laden
-const MAILCLIENT_URL = process.env.MAILCLIENT_URL || 'http://localhost:3000';
+const MAILCLIENT_URL = process.env.MAILCLIENT_URL || 'http://localhost:3010';
 
 /**
  * Prüft, ob Mailclient-API erreichbar ist

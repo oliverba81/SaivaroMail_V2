@@ -9,6 +9,17 @@ import Card from '@/components/Card';
 import Button from '@/components/Button';
 import { FiVolume2 } from 'react-icons/fi';
 
+export interface InitialSettings {
+  fetchIntervalMinutes?: number;
+  openaiApiKey?: string | null;
+  openaiModel?: string;
+  elevenlabsApiKey?: string | null;
+  elevenlabsVoiceId?: string | null;
+  elevenlabsEnabled?: boolean;
+  themeRequired?: boolean;
+  permanentDeleteAfterDays?: number;
+}
+
 interface SettingsGeneralTabProps {
   onError?: (error: string) => void;
   onBack?: () => void;
@@ -20,6 +31,7 @@ interface SettingsGeneralTabProps {
   cardOrder?: string[];
   onCardOrderChange?: (order: string[]) => void;
   onSaveFilters?: () => Promise<void>;
+  initialSettings?: InitialSettings;
 }
 
 export default function SettingsGeneralTab({
@@ -33,6 +45,7 @@ export default function SettingsGeneralTab({
   cardOrder,
   onCardOrderChange,
   onSaveFilters,
+  initialSettings,
 }: SettingsGeneralTabProps) {
   const router = routerProp || useRouter();
   const toast = toastProp || useToast();
@@ -172,8 +185,44 @@ export default function SettingsGeneralTab({
   }, [router, onError]);
 
   useEffect(() => {
-    loadFetchInterval();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (initialSettings) {
+      if (initialSettings.fetchIntervalMinutes !== undefined) {
+        setFetchInterval(initialSettings.fetchIntervalMinutes);
+        originalFetchIntervalRef.current = initialSettings.fetchIntervalMinutes;
+      }
+      if (initialSettings.openaiApiKey !== undefined && initialSettings.openaiApiKey !== null) {
+        setOpenaiApiKey(initialSettings.openaiApiKey);
+        originalConfigRef.current.openaiApiKey = initialSettings.openaiApiKey;
+      }
+      if (initialSettings.openaiModel) {
+        setOpenaiModel(initialSettings.openaiModel);
+        originalConfigRef.current.openaiModel = initialSettings.openaiModel;
+      }
+      if (initialSettings.elevenlabsApiKey !== undefined && initialSettings.elevenlabsApiKey !== null) {
+        setElevenlabsApiKey(initialSettings.elevenlabsApiKey);
+        originalConfigRef.current.elevenlabsApiKey = initialSettings.elevenlabsApiKey;
+      }
+      if (initialSettings.elevenlabsVoiceId !== undefined && initialSettings.elevenlabsVoiceId !== null) {
+        setElevenlabsVoiceId(initialSettings.elevenlabsVoiceId);
+        originalConfigRef.current.elevenlabsVoiceId = initialSettings.elevenlabsVoiceId;
+      }
+      if (initialSettings.elevenlabsEnabled !== undefined) {
+        setElevenlabsEnabled(initialSettings.elevenlabsEnabled);
+        originalConfigRef.current.elevenlabsEnabled = initialSettings.elevenlabsEnabled;
+      }
+      if (initialSettings.themeRequired !== undefined) {
+        setThemeRequired(initialSettings.themeRequired);
+        originalConfigRef.current.themeRequired = initialSettings.themeRequired;
+      }
+      if (initialSettings.permanentDeleteAfterDays !== undefined) {
+        const days = Math.max(0, Math.floor(Number(initialSettings.permanentDeleteAfterDays)) || 0);
+        setPermanentDeleteAfterDays(days);
+        originalConfigRef.current.permanentDeleteAfterDays = days;
+      }
+    } else {
+      loadFetchInterval();
+    }
+  }, [initialSettings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Track unsaved changes
   useEffect(() => {

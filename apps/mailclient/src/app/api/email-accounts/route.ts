@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTenantDbClient } from '@/lib/tenant-db-client';
+import { getTenantDbClient, getTenantDbClientBySlug } from '@/lib/tenant-db-client';
 import { extractTokenFromHeader, verifyToken } from '@/lib/auth';
 
 /**
@@ -58,28 +58,12 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    const tenantContext = {
-      companyId: companyId || null,
-      companySlug: companySlug || undefined,
-    };
-
-    // Tenant-Context companyId auflösen
-    let resolvedCompanyId = tenantContext.companyId;
-    if (!resolvedCompanyId && tenantContext.companySlug) {
-      const { getCompanyDbConfigBySlug } = await import('@/lib/scc-client');
-      const dbConfig = await getCompanyDbConfigBySlug(tenantContext.companySlug);
-      if (dbConfig) {
-        resolvedCompanyId = dbConfig.companyId;
-      }
-    }
-
-    // Tenant-DB-Client holen
+    // Tenant-DB-Client holen (Slug-Pfad vermeidet doppelten SCC-API-Call)
     let client;
-    if (resolvedCompanyId) {
-      client = await getTenantDbClient(resolvedCompanyId);
-    } else if (tenantContext.companySlug) {
-      const { getTenantDbClientBySlug } = await import('@/lib/tenant-db-client');
-      client = await getTenantDbClientBySlug(tenantContext.companySlug);
+    if (companyId) {
+      client = await getTenantDbClient(companyId);
+    } else if (companySlug) {
+      client = await getTenantDbClientBySlug(companySlug);
     } else {
       return NextResponse.json(
         { error: 'Company-ID oder Slug erforderlich' },
@@ -254,22 +238,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Tenant-Context companyId auflösen
-    let resolvedCompanyId = companyId;
-    if (!resolvedCompanyId && companySlug) {
-      const { getCompanyDbConfigBySlug } = await import('@/lib/scc-client');
-      const dbConfig = await getCompanyDbConfigBySlug(companySlug);
-      if (dbConfig) {
-        resolvedCompanyId = dbConfig.companyId;
-      }
-    }
-
-    // Tenant-DB-Client holen
+    // Tenant-DB-Client holen (Slug-Pfad vermeidet doppelten SCC-API-Call)
     let client;
-    if (resolvedCompanyId) {
-      client = await getTenantDbClient(resolvedCompanyId);
+    if (companyId) {
+      client = await getTenantDbClient(companyId);
     } else if (companySlug) {
-      const { getTenantDbClientBySlug } = await import('@/lib/tenant-db-client');
       client = await getTenantDbClientBySlug(companySlug);
     } else {
       return NextResponse.json(

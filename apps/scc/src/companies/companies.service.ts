@@ -359,7 +359,7 @@ export class CompaniesService {
 
         // Debug-Log für jeden User
         console.log(
-          `  - ${user.username || user.email} (${user.id}) - Passwort: ${password ? `"${password.substring(0, 2)}..." (${password.length} chars)` : 'FEHLT'}`
+          `  - ${user.username || user.email} (${user.id}) - Passwort: ${typeof password === 'string' ? `"${password.substring(0, 2)}..." (${password.length} chars)` : 'FEHLT'}`
         );
 
         return user;

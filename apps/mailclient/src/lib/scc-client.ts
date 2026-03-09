@@ -5,7 +5,23 @@
 
 import { Pool } from 'pg';
 import * as crypto from 'crypto';
-import type { CompanyDbConfig } from '@saivaro/shared';
+
+/** DB-Konfiguration einer Company (entspricht @saivaro/shared CompanyDbConfig) */
+export interface CompanyDbConfig {
+  id: string;
+  companyId: string;
+  dbHost: string;
+  dbPort: number;
+  dbName: string;
+  dbUser: string;
+  dbPassword?: string;
+  dbSslMode: string;
+  provisioningStatus: string;
+  healthStatus: string;
+  createdAt: string;
+  updatedAt: string;
+  metadata?: Record<string, unknown>;
+}
 
 // Connection-Pool für SCC-DB (nur erstellen, wenn SCC_DATABASE_URL gesetzt ist)
 let sccPool: Pool | null = null;
@@ -15,9 +31,20 @@ function getSccPool(): Pool {
     if (!process.env.SCC_DATABASE_URL) {
       throw new Error('SCC_DATABASE_URL ist nicht gesetzt. Bitte in .env konfigurieren.');
     }
+    let connectionString = process.env.SCC_DATABASE_URL;
+    const useSsl = /sslmode=require/i.test(connectionString) || /sslmode=verify-full/i.test(connectionString);
+    // sslmode in Connection-String überschreibt ssl-Config (node-postgres #2375) – entfernen, SSL separat setzen
+    connectionString = connectionString
+      .replace(/[?&]sslmode=[^&]*/gi, '')
+      .replace(/\?&/, '?')
+      .replace(/&$/, '')
+      .replace(/\?$/, '');
     sccPool = new Pool({
-      connectionString: process.env.SCC_DATABASE_URL,
+      connectionString,
       max: 10,
+      ...(useSsl && {
+        ssl: { rejectUnauthorized: false },
+      }),
     });
   }
   return sccPool;
@@ -199,6 +226,17 @@ export async function getCompanyDbConfig(
     
     throw new Error(`Fehler beim Laden der DB-Config: ${error.message || 'Unbekannter Fehler'}`);
   }
+}
+
+/**
+ * Lädt nur die Company-ID anhand des Slugs (leichte SCC-DB-Abfrage, kein API-Call)
+ * @param companySlug Slug der Company (z. B. "acme-corp")
+ * @returns Company-ID oder null wenn nicht gefunden
+ */
+export async function getCompanyIdBySlug(companySlug: string): Promise<string | null> {
+  const pool = getSccPool();
+  const result = await pool.query(`SELECT id FROM companies WHERE slug = $1`, [companySlug]);
+  return result.rows.length > 0 ? result.rows[0].id : null;
 }
 
 /**

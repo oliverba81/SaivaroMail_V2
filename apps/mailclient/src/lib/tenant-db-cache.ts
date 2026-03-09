@@ -4,7 +4,7 @@
  */
 
 import NodeCache from 'node-cache';
-import type { CompanyDbConfig } from '@saivaro/shared';
+import type { CompanyDbConfig } from '@/lib/scc-client';
 
 // Cache für DB-Configs (5 Minuten TTL)
 const dbConfigCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });

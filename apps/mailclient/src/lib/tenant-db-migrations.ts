@@ -33,6 +33,7 @@ export async function ensureUsersTableSchema(client: PoolClient, companyId: stri
           last_name VARCHAR(100),
           role VARCHAR(50) DEFAULT 'user',
           status VARCHAR(50) DEFAULT 'active',
+          visible_filter_ids JSONB,
           last_login_at TIMESTAMP,
           created_at TIMESTAMP DEFAULT NOW(),
           updated_at TIMESTAMP DEFAULT NOW()
@@ -105,6 +106,21 @@ export async function ensureUsersTableSchema(client: PoolClient, companyId: stri
         }
       } else {
         console.log(`✅ username-Spalte existiert bereits`);
+      }
+
+      // Prüfe, ob visible_filter_ids-Spalte existiert
+      const visibleFilterIdsCheck = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.columns
+          WHERE table_schema = 'public'
+          AND table_name = 'users'
+          AND column_name = 'visible_filter_ids'
+        );
+      `);
+      if (!visibleFilterIdsCheck.rows[0].exists) {
+        console.log(`📝 Füge visible_filter_ids-Spalte zur users-Tabelle hinzu für Company ${companyId}`);
+        await client.query(`ALTER TABLE users ADD COLUMN visible_filter_ids JSONB;`);
+        console.log(`✅ visible_filter_ids-Spalte erfolgreich hinzugefügt`);
       }
     }
     
@@ -1972,6 +1988,8 @@ export async function ensureCompanyConfigTableSchema(client: PoolClient, company
           elevenlabs_voice_id VARCHAR(100),
           elevenlabs_enabled BOOLEAN DEFAULT false,
           theme_required BOOLEAN DEFAULT false,
+          permanent_delete_after_days INTEGER DEFAULT 0,
+          email_filters JSONB DEFAULT '[]'::jsonb,
           created_at TIMESTAMP DEFAULT NOW(),
           updated_at TIMESTAMP DEFAULT NOW(),
           CONSTRAINT company_config_single_row CHECK (id = 'company_config'),
@@ -2019,6 +2037,16 @@ export async function ensureCompanyConfigTableSchema(client: PoolClient, company
       if (!existingColumns.includes('theme_required')) {
         console.log(`📝 Füge theme_required-Spalte hinzu`);
         await client.query(`ALTER TABLE company_config ADD COLUMN theme_required BOOLEAN DEFAULT false;`);
+      }
+      
+      if (!existingColumns.includes('permanent_delete_after_days')) {
+        console.log(`📝 Füge permanent_delete_after_days-Spalte hinzu`);
+        await client.query(`ALTER TABLE company_config ADD COLUMN permanent_delete_after_days INTEGER DEFAULT 0;`);
+      }
+      
+      if (!existingColumns.includes('email_filters')) {
+        console.log(`📝 Füge email_filters-Spalte hinzu`);
+        await client.query(`ALTER TABLE company_config ADD COLUMN email_filters JSONB DEFAULT '[]'::jsonb;`);
       }
       
       if (!existingColumns.includes('created_at')) {

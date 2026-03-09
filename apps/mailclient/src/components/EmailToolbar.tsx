@@ -1125,242 +1125,90 @@ export default function EmailToolbar({
       </Modal>
 
       {/* Theme-Modal */}
-      {showThemeModal && (
-        <>
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.5)',
-              zIndex: 9998,
-            }}
-            onClick={() => setShowThemeModal(false)}
-          />
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 9999,
-              pointerEvents: 'none',
-            }}
-          >
-            <div
-              className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full mx-4"
-              style={{ pointerEvents: 'auto' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h2 className="text-xl font-semibold mb-4 text-[#1F2937]">
-                Thema zuweisen
-              </h2>
-              <p className="text-sm text-[#6B7280] mb-4">
-                {selectedEmail && selectedEmailId
-                  ? 'Wählen Sie ein Thema für diese E-Mail aus:'
-                  : `Wählen Sie ein Thema für ${selectedEmails.size} E-Mail${selectedEmails.size > 1 ? 's' : ''} aus:`}
-              </p>
+      <Modal
+        isOpen={showThemeModal}
+        onClose={() => setShowThemeModal(false)}
+        title="Thema zuweisen"
+        maxWidth="md"
+      >
+        <p className="text-sm text-[#6B7280] mb-4">
+          {selectedEmail && selectedEmailId
+            ? 'Wählen Sie ein Thema für diese E-Mail aus:'
+            : `Wählen Sie ein Thema für ${selectedEmails.size} E-Mail${selectedEmails.size > 1 ? 's' : ''} aus:`}
+        </p>
 
-              {loadingThemes ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="spinner" style={{ width: '24px', height: '24px' }}></div>
-                </div>
-              ) : themes.length === 0 ? (
-                <p className="text-[#6B7280] py-4">Keine Themes verfügbar.</p>
-              ) : (
-                <div className="max-h-64 overflow-y-auto mb-4">
-                  <label
-                    className="flex items-start gap-3 p-3 rounded-lg hover:bg-[#F3F4F6] cursor-pointer transition-colors"
-                  >
-                    <input
-                      type="radio"
-                      name="theme"
-                      checked={selectedThemeId === null}
-                      onChange={() => setSelectedThemeId(null)}
-                      className="mt-1 w-4 h-4 cursor-pointer"
-                    />
-                    <div className="flex-1">
-                      <div className="font-medium text-[#1F2937]">
-                        Kein Thema
-                      </div>
-                    </div>
-                  </label>
-                  {themes.map((theme) => {
-                    const isChecked = selectedThemeId === theme.id;
-                    return (
-                      <label
-                        key={theme.id}
-                        className="flex items-start gap-3 p-3 rounded-lg hover:bg-[#F3F4F6] cursor-pointer transition-colors"
-                      >
-                        <input
-                          type="radio"
-                          name="theme"
-                          checked={isChecked}
-                          onChange={() => setSelectedThemeId(theme.id)}
-                          className="mt-1 w-4 h-4 cursor-pointer"
-                        />
-                        <div className="flex-1 flex items-center gap-2">
-                          {theme.color && (
-                            <div
-                              className="w-4 h-4 rounded"
-                              style={{ backgroundColor: theme.color }}
-                            />
-                          )}
-                          <div className="font-medium text-[#1F2937]">
-                            {theme.name}
-                          </div>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={() => setShowThemeModal(false)}
-                  className="px-4 py-2 border border-[#E5E7EB] bg-white rounded-lg text-sm font-medium text-[#1F2937] hover:bg-[#F3F4F6] transition-colors"
-                  disabled={savingTheme}
-                >
-                  Abbrechen
-                </button>
-                <button
-                  onClick={handleSaveTheme}
-                  disabled={savingTheme || loadingThemes}
-                  className="px-4 py-2 bg-[#2563EB] text-white rounded-lg text-sm font-medium hover:bg-[#1D4ED8] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {savingTheme ? 'Speichere...' : 'Speichern'}
-                </button>
-              </div>
-            </div>
+        {loadingThemes ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="spinner" style={{ width: '24px', height: '24px' }}></div>
           </div>
-        </>
-      )}
-
-      {/* Theme-Modal */}
-      {showThemeModal && (
-        <>
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.5)',
-              zIndex: 9998,
-            }}
-            onClick={() => setShowThemeModal(false)}
-          />
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 9999,
-              pointerEvents: 'none',
-            }}
-          >
-            <div
-              className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full mx-4"
-              style={{ pointerEvents: 'auto' }}
-              onClick={(e) => e.stopPropagation()}
+        ) : themes.length === 0 ? (
+          <p className="text-[#6B7280] py-4">Keine Themes verfügbar.</p>
+        ) : (
+          <div className="max-h-64 overflow-y-auto mb-4">
+            <label
+              className="flex items-start gap-3 p-3 rounded-lg hover:bg-[#F3F4F6] cursor-pointer transition-colors"
             >
-              <h2 className="text-xl font-semibold mb-4 text-[#1F2937]">
-                Thema zuweisen
-              </h2>
-              <p className="text-sm text-[#6B7280] mb-4">
-                {selectedEmail && selectedEmailId
-                  ? 'Wählen Sie ein Thema für diese E-Mail aus:'
-                  : `Wählen Sie ein Thema für ${selectedEmails.size} E-Mail${selectedEmails.size > 1 ? 's' : ''} aus:`}
-              </p>
-
-              {loadingThemes ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="spinner" style={{ width: '24px', height: '24px' }}></div>
+              <input
+                type="radio"
+                name="theme"
+                checked={selectedThemeId === null}
+                onChange={() => setSelectedThemeId(null)}
+                className="mt-1 w-4 h-4 cursor-pointer"
+              />
+              <div className="flex-1">
+                <div className="font-medium text-[#1F2937]">
+                  Kein Thema
                 </div>
-              ) : themes.length === 0 ? (
-                <p className="text-[#6B7280] py-4">Keine Themes verfügbar.</p>
-              ) : (
-                <div className="max-h-64 overflow-y-auto mb-4">
-                  <label
-                    className="flex items-start gap-3 p-3 rounded-lg hover:bg-[#F3F4F6] cursor-pointer transition-colors"
-                  >
-                    <input
-                      type="radio"
-                      name="theme"
-                      checked={selectedThemeId === null}
-                      onChange={() => setSelectedThemeId(null)}
-                      className="mt-1 w-4 h-4 cursor-pointer"
-                    />
-                    <div className="flex-1">
-                      <div className="font-medium text-[#1F2937]">
-                        Kein Thema
-                      </div>
-                    </div>
-                  </label>
-                  {themes.map((theme) => {
-                    const isChecked = selectedThemeId === theme.id;
-                    return (
-                      <label
-                        key={theme.id}
-                        className="flex items-start gap-3 p-3 rounded-lg hover:bg-[#F3F4F6] cursor-pointer transition-colors"
-                      >
-                        <input
-                          type="radio"
-                          name="theme"
-                          checked={isChecked}
-                          onChange={() => setSelectedThemeId(theme.id)}
-                          className="mt-1 w-4 h-4 cursor-pointer"
-                        />
-                        <div className="flex-1 flex items-center gap-2">
-                          {theme.color && (
-                            <div
-                              className="w-4 h-4 rounded"
-                              style={{ backgroundColor: theme.color }}
-                            />
-                          )}
-                          <div className="font-medium text-[#1F2937]">
-                            {theme.name}
-                          </div>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={() => setShowThemeModal(false)}
-                  className="px-4 py-2 border border-[#E5E7EB] bg-white rounded-lg text-sm font-medium text-[#1F2937] hover:bg-[#F3F4F6] transition-colors"
-                  disabled={savingTheme}
-                >
-                  Abbrechen
-                </button>
-                <button
-                  onClick={handleSaveTheme}
-                  disabled={savingTheme || loadingThemes}
-                  className="px-4 py-2 bg-[#2563EB] text-white rounded-lg text-sm font-medium hover:bg-[#1D4ED8] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {savingTheme ? 'Speichere...' : 'Speichern'}
-                </button>
               </div>
-            </div>
+            </label>
+            {themes.map((theme) => {
+              const isChecked = selectedThemeId === theme.id;
+              return (
+                <label
+                  key={theme.id}
+                  className="flex items-start gap-3 p-3 rounded-lg hover:bg-[#F3F4F6] cursor-pointer transition-colors"
+                >
+                  <input
+                    type="radio"
+                    name="theme"
+                    checked={isChecked}
+                    onChange={() => setSelectedThemeId(theme.id)}
+                    className="mt-1 w-4 h-4 cursor-pointer"
+                  />
+                  <div className="flex-1 flex items-center gap-2">
+                    {theme.color && (
+                      <div
+                        className="w-4 h-4 rounded"
+                        style={{ backgroundColor: theme.color }}
+                      />
+                    )}
+                    <div className="font-medium text-[#1F2937]">
+                      {theme.name}
+                    </div>
+                  </div>
+                </label>
+              );
+            })}
           </div>
-        </>
-      )}
+        )}
+
+        <div className="flex justify-end gap-3 mt-6">
+          <button
+            onClick={() => setShowThemeModal(false)}
+            className="px-4 py-2 border border-[#E5E7EB] bg-white rounded-lg text-sm font-medium text-[#1F2937] hover:bg-[#F3F4F6] transition-colors"
+            disabled={savingTheme}
+          >
+            Abbrechen
+          </button>
+          <button
+            onClick={handleSaveTheme}
+            disabled={savingTheme || loadingThemes}
+            className="px-4 py-2 bg-[#2563EB] text-white rounded-lg text-sm font-medium hover:bg-[#1D4ED8] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {savingTheme ? 'Speichere...' : 'Speichern'}
+          </button>
+        </div>
+      </Modal>
 
       {/* Workflow-Modal */}
       {showWorkflowModal && (

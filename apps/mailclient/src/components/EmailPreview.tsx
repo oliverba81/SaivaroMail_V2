@@ -125,7 +125,7 @@ export default function EmailPreview({
     loadFeatures();
   }, []);
 
-  // Lade Anhänge wenn E-Mail ausgewählt ist
+  // Lade Anhänge wenn E-Mail ausgewählt ist (optional: nur wenn E-Mail Anhänge haben könnte)
   useEffect(() => {
     if (email?.id) {
       loadAttachments();
@@ -195,11 +195,16 @@ export default function EmailPreview({
         const data = await response.json();
         setAttachments(data.attachments || []);
       } else {
-        console.error('Fehler beim Laden der Anhänge:', response.status, response.statusText);
+        // 404 = keine Anhänge-Route oder E-Mail ohne Anhänge; leeres Array ohne Fehlerlog
+        if (response.status !== 404 && process.env.NODE_ENV === 'development') {
+          console.warn('Anhänge konnten nicht geladen werden:', response.status, response.statusText);
+        }
         setAttachments([]);
       }
     } catch (err) {
-      console.error('Fehler beim Laden der Anhänge:', err);
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Fehler beim Laden der Anhänge:', err);
+      }
       setAttachments([]);
     } finally {
       setLoadingAttachments(false);

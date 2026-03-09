@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const companyParam = searchParams.get('company');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -16,7 +18,8 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/auth/login', {
+      const apiUrl = companyParam ? `/api/auth/login?company=${encodeURIComponent(companyParam)}` : '/api/auth/login';
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -38,7 +41,7 @@ export default function LoginPage() {
       if (!response.ok) {
         const errorMessage = data.error || 'Anmeldung fehlgeschlagen';
         setError(errorMessage);
-        console.error('Login-Fehler:', data);
+        console.error('Login-Fehler:', errorMessage, data);
         return;
       }
 
@@ -46,8 +49,9 @@ export default function LoginPage() {
       localStorage.setItem('mailclient_token', data.access_token || data.token);
       localStorage.setItem('mailclient_user', JSON.stringify(data.user));
 
-      // Weiterleitung zur E-Mail-Liste
-      router.push('/emails');
+      // Weiterleitung zur E-Mail-Liste (company-Param erhalten für Tenant-Context)
+      const redirectUrl = companyParam ? `/emails?company=${encodeURIComponent(companyParam)}` : '/emails';
+      router.push(redirectUrl);
     } catch (err: any) {
       // Prüfe, ob es ein JSON-Parse-Fehler ist
       if (err.message && err.message.includes('JSON')) {
@@ -55,7 +59,7 @@ export default function LoginPage() {
         console.error('JSON-Parse-Fehler beim Login:', err);
       } else {
         setError('Fehler bei der Anmeldung. Bitte versuchen Sie es erneut.');
-        console.error('Login-Fehler:', err);
+        console.error('Login-Fehler:', err?.message || err);
       }
     } finally {
       setLoading(false);

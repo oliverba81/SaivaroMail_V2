@@ -1,13 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import { useToast } from '@/components/ToastProvider';
 import { useConfirm } from '@/components/ConfirmDialog';
 import SettingsDashboard from '@/components/SettingsDashboard';
-import { SkeletonCard } from '@/components/Skeleton';
 import SettingsAccountsTab from '@/components/settings/SettingsAccountsTab';
 import SettingsGeneralTab from '@/components/settings/SettingsGeneralTab';
 import SettingsFiltersTab from '@/components/settings/SettingsFiltersTab';
@@ -128,8 +127,6 @@ const TAB_TITLES: Record<SettingsTab, string> = {
   contacts: 'Kontakte',
 };
 
-// Konstanten für Magic Numbers/Strings
-const SKELETON_CARD_COUNT = 7;
 const SIDEBAR_WIDTH = '280px';
 const FILTER_UPDATE_DELAY_MS = 100;
 
@@ -179,19 +176,54 @@ const dispatchCustomEvent = (eventName: string, detail?: any): void => {
   }
 };
 
+const VALID_TABS: SettingsTab[] = ['accounts', 'general', 'filters', 'themes', 'automation', 'users', 'departments', 'contacts'];
+
 export default function SettingsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const toast = useToast();
   const { confirm } = useConfirm();
   const [activeTab, setActiveTab] = useState<SettingsTab | null>(null);
   const [showDashboard, setShowDashboard] = useState(true);
+
+  // Tab aus URL lesen (z.B. ?tab=filters für direkte Navigation)
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && VALID_TABS.includes(tabParam as SettingsTab)) {
+      setActiveTab(tabParam as SettingsTab);
+      setShowDashboard(false);
+    }
+  }, [searchParams]);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  
-  // Gemeinsamer State für Dashboard-Statistiken
+
+  // Loaded-Flags: vermeidet Doppelladung (leere Arrays sind gültig)
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
+  const [filtersLoaded, setFiltersLoaded] = useState(false);
+  const [usersLoaded, setUsersLoaded] = useState(false);
+  const [departmentsLoaded, setDepartmentsLoaded] = useState(false);
+  const [contactsLoaded, setContactsLoaded] = useState(false);
+
+  // Tab-spezifische Lade-Anzeige
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [loadingFilters, setLoadingFilters] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
+  const [loadingContacts, setLoadingContacts] = useState(false);
+
+  // Gemeinsamer State für Tab-Daten
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [emailFilters, setEmailFilters] = useState<EmailFilter[]>([]);
   const [cardOrder, setCardOrder] = useState<string[] | null>(null);
+  const [initialSettings, setInitialSettings] = useState<{
+    fetchIntervalMinutes?: number;
+    openaiApiKey?: string | null;
+    openaiModel?: string;
+    elevenlabsApiKey?: string | null;
+    elevenlabsVoiceId?: string | null;
+    elevenlabsEnabled?: boolean;
+    themeRequired?: boolean;
+    permanentDeleteAfterDays?: number;
+  } | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -271,14 +303,17 @@ export default function SettingsPage() {
         return;
       }
 
+      const contentType = response.headers.get('content-type');
+      const data = contentType?.includes('application/json')
+        ? await response.json().catch(() => ({}))
+        : {};
+
       if (!response.ok) {
-        setError('Fehler beim Laden der Filter');
+        setError(data?.error || 'Fehler beim Laden der Filter');
         return;
       }
 
-      const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        const data = await response.json();
+      if (data?.settings) {
         // Für Filter-Tab: Company-Filter (alle) verwenden, falls Admin; sonst nur eigene sichtbare
         if (data.settings?.companyEmailFilters != null && Array.isArray(data.settings.companyEmailFilters)) {
           setEmailFilters(data.settings.companyEmailFilters);
@@ -290,6 +325,17 @@ export default function SettingsPage() {
         } else if (data.settings?.layoutPreferences != null && data.settings.layoutPreferences?.cardOrder === null) {
           setCardOrder(null);
         }
+        // Allgemein-Tab: initialSettings setzen, um redundanten GET /api/settings zu vermeiden
+        setInitialSettings({
+          fetchIntervalMinutes: data.settings.fetchIntervalMinutes,
+          openaiApiKey: data.settings.openaiApiKey ?? null,
+          openaiModel: data.settings.openaiModel,
+          elevenlabsApiKey: data.settings.elevenlabsApiKey ?? null,
+          elevenlabsVoiceId: data.settings.elevenlabsVoiceId ?? null,
+          elevenlabsEnabled: data.settings.elevenlabsEnabled,
+          themeRequired: data.settings.themeRequired,
+          permanentDeleteAfterDays: data.settings.permanentDeleteAfterDays,
+        });
       } else {
         setError('Ungültige Antwort vom Server');
       }
@@ -415,49 +461,110 @@ export default function SettingsPage() {
     }
   }, [router]);
 
-  // Initiales Laden beim Mount - parallelisiert
+  // Token-Check beim Mount
   useEffect(() => {
     const token = getLocalStorageItem('mailclient_token');
     if (!token) {
       router.push('/login');
-      return;
     }
+  }, [router]);
 
-    // Erstelle neuen AbortController
+  // Tab-lazy-load: Daten laden wenn Tab gesetzt (Klick oder ?tab=)
+  useEffect(() => {
+    const token = getLocalStorageItem('mailclient_token');
+    if (!token || !activeTab) return;
+
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
+    const signal = abortController.signal;
 
-    // Lade alle Daten parallel
-    const loadInitialData = async () => {
-      setLoading(true);
-      setError('');
-
-      try {
-        await Promise.all([
-          loadAccounts(abortController.signal),
-          loadEmailFilters(abortController.signal),
-          loadUsers(abortController.signal),
-          loadDepartments(abortController.signal),
-          loadContacts(abortController.signal),
-        ]);
-      } catch (err: any) {
-        if (err.name !== 'AbortError') {
-          setError('Fehler beim Laden der Daten');
+    const run = async () => {
+      if (activeTab === 'accounts' && !accountsLoaded) {
+        setLoadingAccounts(true);
+        try {
+          await loadAccounts(signal);
+        } finally {
+          if (!signal.aborted) {
+            setAccountsLoaded(true);
+            setLoadingAccounts(false);
+          }
         }
-      } finally {
-        if (!abortController.signal.aborted) {
-          setLoading(false);
+      }
+      if ((activeTab === 'general' || activeTab === 'filters') && !filtersLoaded) {
+        setLoadingFilters(true);
+        try {
+          await loadEmailFilters(signal);
+        } finally {
+          if (!signal.aborted) {
+            setFiltersLoaded(true);
+            setLoadingFilters(false);
+          }
+        }
+      }
+      if (activeTab === 'users') {
+        const promises: Promise<void>[] = [];
+        if (!filtersLoaded) {
+          setLoadingFilters(true);
+          promises.push(loadEmailFilters(signal).finally(() => {
+            if (!signal.aborted) {
+              setFiltersLoaded(true);
+              setLoadingFilters(false);
+            }
+          }));
+        }
+        if (!usersLoaded) {
+          setLoadingUsers(true);
+          promises.push(loadUsers(signal).finally(() => {
+            if (!signal.aborted) {
+              setUsersLoaded(true);
+              setLoadingUsers(false);
+            }
+          }));
+        }
+        await Promise.all(promises);
+      }
+      if (activeTab === 'departments' && !departmentsLoaded) {
+        setLoadingDepartments(true);
+        try {
+          await loadDepartments(signal);
+        } finally {
+          if (!signal.aborted) {
+            setDepartmentsLoaded(true);
+            setLoadingDepartments(false);
+          }
+        }
+      }
+      if (activeTab === 'contacts' && !contactsLoaded) {
+        setLoadingContacts(true);
+        try {
+          await loadContacts(signal);
+        } finally {
+          if (!signal.aborted) {
+            setContactsLoaded(true);
+            setLoadingContacts(false);
+          }
         }
       }
     };
 
-    loadInitialData();
+    run();
 
-    // Cleanup: Abbreche alle laufenden Requests beim Unmount
     return () => {
       abortController.abort();
     };
-  }, [router, loadAccounts, loadEmailFilters, loadUsers, loadDepartments, loadContacts]);
+  }, [
+    activeTab,
+    accountsLoaded,
+    filtersLoaded,
+    usersLoaded,
+    departmentsLoaded,
+    contactsLoaded,
+    loadAccounts,
+    loadEmailFilters,
+    loadUsers,
+    loadDepartments,
+    loadContacts,
+  ]);
 
   // Handler für Dashboard-Kategorie-Klick
   const handleCategoryClick = (categoryId: string) => {
@@ -630,11 +737,6 @@ export default function SettingsPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showDashboard, handleBackToDashboard]);
 
-  // Berechne Statistiken für Dashboard mit useMemo
-  const activeAccountsCount = useMemo(() => {
-    return accounts.filter((a) => a.isActive).length;
-  }, [accounts]);
-
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar />
@@ -649,24 +751,11 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              {loading ? (
-                <div className="dashboard-grid">
-                  {Array.from({ length: SKELETON_CARD_COUNT }).map((_, i) => (
-                    <SkeletonCard key={i} />
-                  ))}
-                </div>
-              ) : (
-                <SettingsDashboard
-                  accountsCount={accounts.length}
-                  activeAccountsCount={activeAccountsCount}
-                  filtersCount={emailFilters.length}
-                  usersCount={users.length}
-                  departmentsCount={departments.length}
-                  onCategoryClick={handleCategoryClick}
-                  cardOrder={cardOrder || undefined}
-                  onCardOrderChange={handleCardOrderChange}
-                />
-              )}
+              <SettingsDashboard
+                onCategoryClick={handleCategoryClick}
+                cardOrder={cardOrder || undefined}
+                onCardOrderChange={handleCardOrderChange}
+              />
             </>
           ) : (
             <>
@@ -696,17 +785,28 @@ export default function SettingsPage() {
 
               {/* Tab-Komponenten */}
               {activeTab === 'accounts' && (
-                <SettingsAccountsTab
-                  onError={setError}
-                  onBack={handleBackToDashboard}
-                  toast={toast}
-                  router={router}
-                  accounts={accounts}
-                  onAccountsChange={handleAccountsChange}
-                />
+                loadingAccounts ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="spinner" style={{ width: '32px', height: '32px' }} />
+                  </div>
+                ) : (
+                  <SettingsAccountsTab
+                    onError={setError}
+                    onBack={handleBackToDashboard}
+                    toast={toast}
+                    router={router}
+                    accounts={accounts}
+                    onAccountsChange={handleAccountsChange}
+                  />
+                )
               )}
 
               {activeTab === 'general' && (
+                loadingFilters ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="spinner" style={{ width: '32px', height: '32px' }} />
+                  </div>
+                ) : (
                 <SettingsGeneralTab
                   onError={setError}
                   onBack={handleBackToDashboard}
@@ -718,18 +818,26 @@ export default function SettingsPage() {
                   cardOrder={cardOrder || undefined}
                   onCardOrderChange={handleCardOrderChange}
                   onSaveFilters={handleSaveFilters}
+                  initialSettings={initialSettings ?? undefined}
                 />
+                )
               )}
 
               {activeTab === 'filters' && (
-                <SettingsFiltersTab
-                  onError={setError}
-                  onBack={handleBackToDashboard}
-                  toast={toast}
-                  router={router}
-                  emailFilters={emailFilters}
-                  onFiltersChange={handleEmailFiltersChange}
-                />
+                loadingFilters ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="spinner" style={{ width: '32px', height: '32px' }} />
+                  </div>
+                ) : (
+                  <SettingsFiltersTab
+                    onError={setError}
+                    onBack={handleBackToDashboard}
+                    toast={toast}
+                    router={router}
+                    emailFilters={emailFilters}
+                    onFiltersChange={handleEmailFiltersChange}
+                  />
+                )
               )}
 
               {activeTab === 'themes' && (
@@ -747,37 +855,55 @@ export default function SettingsPage() {
               )}
 
               {activeTab === 'users' && (
-                <SettingsUsersTab
-                  onError={setError}
-                  onBack={handleBackToDashboard}
-                  toast={toast}
-                  router={router}
-                  users={users}
-                  onUsersChange={handleUsersChange}
-                  companyFilters={emailFilters.map((f) => ({ id: f.id, name: f.name }))}
-                />
+                (loadingFilters || loadingUsers) ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="spinner" style={{ width: '32px', height: '32px' }} />
+                  </div>
+                ) : (
+                  <SettingsUsersTab
+                    onError={setError}
+                    onBack={handleBackToDashboard}
+                    toast={toast}
+                    router={router}
+                    users={users}
+                    onUsersChange={handleUsersChange}
+                    companyFilters={emailFilters.map((f) => ({ id: f.id, name: f.name }))}
+                  />
+                )
               )}
 
               {activeTab === 'departments' && (
-                <SettingsDepartmentsTab
-                  onError={setError}
-                  onBack={handleBackToDashboard}
-                  toast={toast}
-                  router={router}
-                  departments={departments}
-                  onDepartmentsChange={handleDepartmentsChange}
-                />
+                loadingDepartments ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="spinner" style={{ width: '32px', height: '32px' }} />
+                  </div>
+                ) : (
+                  <SettingsDepartmentsTab
+                    onError={setError}
+                    onBack={handleBackToDashboard}
+                    toast={toast}
+                    router={router}
+                    departments={departments}
+                    onDepartmentsChange={handleDepartmentsChange}
+                  />
+                )
               )}
 
               {activeTab === 'contacts' && (
-                <SettingsContactsTab
-                  contacts={contacts}
-                  onContactsChange={handleContactsChange}
-                  onBack={handleBackToDashboard}
-                  toast={toast}
-                  router={router}
-                  onError={setError}
-                />
+                loadingContacts ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="spinner" style={{ width: '32px', height: '32px' }} />
+                  </div>
+                ) : (
+                  <SettingsContactsTab
+                    contacts={contacts}
+                    onContactsChange={handleContactsChange}
+                    onBack={handleBackToDashboard}
+                    toast={toast}
+                    router={router}
+                    onError={setError}
+                  />
+                )
               )}
             </>
           )}

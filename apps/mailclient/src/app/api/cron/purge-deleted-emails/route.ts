@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getTenantDbClient } from '@/lib/tenant-db-client';
 import { verifyServiceToken } from '@/lib/auth';
 import { getCompanyConfig } from '@/lib/company-config';
-import { ensureCompanyConfigTableSchema } from '@/lib/tenant-db-migrations';
 import { join } from 'path';
 import { unlink } from 'fs/promises';
 import { existsSync } from 'fs';
@@ -33,7 +32,6 @@ export async function POST(request: NextRequest) {
     const client = await getTenantDbClient(companyId);
 
     try {
-      await ensureCompanyConfigTableSchema(client, companyId);
       const config = await getCompanyConfig(client);
       const days = config.permanentDeleteAfterDays ?? 0;
 

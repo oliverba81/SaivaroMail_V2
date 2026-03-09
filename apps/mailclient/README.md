@@ -180,8 +180,10 @@ Der Cron-Service benötigt folgende Umgebungsvariablen in der `.env`-Datei:
 # Service-Token für interne Authentifizierung (erforderlich)
 CRON_SERVICE_TOKEN="your-secret-token-here"
 
-# URL des Mailclients (optional, Standard: http://localhost:3000)
-MAILCLIENT_URL="http://localhost:3000"
+# URL des Mailclients (optional)
+# Standard: http://localhost:3010 (npm run dev)
+# Bei Production (next start -p 3000): MAILCLIENT_URL="http://localhost:3000"
+MAILCLIENT_URL="http://localhost:3010"
 
 # Refresh-Intervall in Millisekunden (optional, Standard: 300000 = 5 Minuten)
 CRON_REFRESH_INTERVAL_MS=300000

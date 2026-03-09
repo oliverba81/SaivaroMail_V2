@@ -1,3 +1,5 @@
+ssh -i .\SaivaroMail -N -L 5433:localhost:5432 root@168.119.182.53
+
 Frontend:
 http://testfirma2.localhost:3000/login
 Benutzername: admin
@@ -9,4 +11,3 @@ testtest
 Backend:
 http://localhost:3002/
 
-ok

@@ -2,6 +2,36 @@ import { Pool } from 'pg';
 import { BadRequestException } from '@nestjs/common';
 
 /**
+ * Leitet Host/Port/SSL aus DATABASE_URL ab (für Remote-DBs wie Hetzner)
+ */
+function getEffectiveDbConfig(dbConfig: {
+  dbHost: string;
+  dbPort: number;
+  dbName: string;
+  dbUser: string;
+  dbPassword: string;
+  dbSslMode: string;
+}) {
+  if (
+    (dbConfig.dbHost === 'localhost' || dbConfig.dbHost === '127.0.0.1') &&
+    process.env.DATABASE_URL
+  ) {
+    try {
+      const url = new URL(process.env.DATABASE_URL);
+      if (url.hostname && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+        return {
+          ...dbConfig,
+          dbHost: url.hostname,
+          dbPort: url.port ? parseInt(url.port, 10) : dbConfig.dbPort,
+          dbSslMode: url.searchParams.get('sslmode') === 'require' ? 'require' : dbConfig.dbSslMode,
+        };
+      }
+    } catch (_) {}
+  }
+  return dbConfig;
+}
+
+/**
  * Validiert einen Tabellennamen gegen Whitelist (nur alphanumerisch + Unterstrich)
  */
 export function validateTableName(tableName: string): boolean {
@@ -19,6 +49,8 @@ export async function createTenantDbPool(dbConfig: {
   dbPassword: string;
   dbSslMode: string;
 }): Promise<Pool> {
+  dbConfig = getEffectiveDbConfig(dbConfig);
+
   // Stelle sicher, dass das Passwort ein String ist
   const password = dbConfig.dbPassword != null ? String(dbConfig.dbPassword) : '';
 
@@ -41,16 +73,39 @@ export async function createTenantDbPool(dbConfig: {
     user: dbConfig.dbUser,
     password: password,
     ssl: dbConfig.dbSslMode === 'require' ? { rejectUnauthorized: false } : false,
-    connectionTimeoutMillis: 5000,
+    connectionTimeoutMillis: 15000,
+    keepAlive: true,
   });
 
-  // Teste Verbindung
-  try {
-    await pool.query('SELECT 1');
-  } catch (error: any) {
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY_MS = 500;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await pool.query('SELECT 1');
+      lastError = null;
+      break;
+    } catch (error: any) {
+      lastError = error;
+      const isRetryable =
+        (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') &&
+        attempt < MAX_RETRIES;
+      if (isRetryable) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      } else {
+        await pool.end();
+        throw new BadRequestException(
+          `Datenbank-Verbindung fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`
+        );
+      }
+    }
+  }
+
+  if (lastError) {
     await pool.end();
     throw new BadRequestException(
-      `Datenbank-Verbindung fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`
+      `Datenbank-Verbindung fehlgeschlagen: ${lastError.message || 'Unbekannter Fehler'}`
     );
   }
 

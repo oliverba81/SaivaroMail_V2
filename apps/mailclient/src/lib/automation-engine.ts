@@ -384,8 +384,12 @@ export async function getUsersWithScheduledRules(companyId: string): Promise<str
   }
 }
 
+const DEFAULT_FETCH_INTERVAL_MINUTES = 5;
+
 /**
- * Lädt alle User mit fetch_interval_minutes aus user_settings
+ * Lädt alle User, die E-Mails automatisch abrufen lassen sollen.
+ * - User mit aktivem E-Mail-Konto und user_settings: nutzt deren fetch_interval_minutes
+ * - User mit aktivem E-Mail-Konto OHNE user_settings: Standard 5 Min (wichtig: wird sonst übersprungen!)
  */
 export async function getUsersWithFetchInterval(
   companyId: string
@@ -394,16 +398,25 @@ export async function getUsersWithFetchInterval(
   let clientReleased = false;
 
   try {
+    // User mit aktiven E-Mail-Konten; fetch_interval aus user_settings oder Standard 5
+    // Ausgeschlossen: User mit explizit fetch_interval_minutes = 0 (deaktiviert)
     const result = await client.query(
-      `SELECT user_id, fetch_interval_minutes 
-       FROM user_settings 
-       WHERE fetch_interval_minutes >= $1 
-         AND fetch_interval_minutes <= $2 
-         AND fetch_interval_minutes IS NOT NULL`,
-      [1, 1440] // 1 Minute bis 24 Stunden
+      `SELECT DISTINCT ea.user_id AS user_id,
+              CASE 
+                WHEN us.fetch_interval_minutes BETWEEN 1 AND 1440 THEN us.fetch_interval_minutes 
+                ELSE $1::integer 
+              END AS fetch_interval_minutes
+       FROM email_accounts ea
+       LEFT JOIN user_settings us ON us.user_id = ea.user_id
+       WHERE ea.is_active = true
+         AND ea.imap_host IS NOT NULL
+         AND ea.imap_username IS NOT NULL
+         AND ea.imap_password IS NOT NULL
+         AND (us.fetch_interval_minutes IS NULL OR (us.fetch_interval_minutes >= 1 AND us.fetch_interval_minutes <= 1440))`,
+      [DEFAULT_FETCH_INTERVAL_MINUTES]
     );
 
-    console.log(`[AutomationEngine] Gefundene User mit fetch_interval_minutes für Company ${companyId}: ${result.rows.length}`);
+    console.log(`[AutomationEngine] Gefundene User mit E-Mail-Abruf für Company ${companyId}: ${result.rows.length}`);
     if (result.rows.length > 0) {
       console.log(`[AutomationEngine] User-Details:`, result.rows.map((r: any) => ({
         userId: r.user_id,

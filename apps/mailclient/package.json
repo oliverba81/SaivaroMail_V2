@@ -4,9 +4,10 @@
   "private": true,
   "description": "Saivaro Mailclient - Multi-Tenant Mail-Client für Firmen",
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "next dev -H 0.0.0.0 -p 3010",
     "build": "next build",
     "start": "next start -p 3000",
+    "start:cron": "tsx scripts/start-cron-service.ts",
     "lint": "next lint",
     "type-check": "tsc --noEmit"
   },

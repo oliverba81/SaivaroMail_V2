@@ -320,9 +320,7 @@ export default function EmailFilters({
       }
 
       // Löst ein Event aus, um die Sidebar zu aktualisieren
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('filtersUpdated'));
-      }, 100);
+      window.dispatchEvent(new CustomEvent('filtersUpdated'));
       
       setEditingFilter(null);
     } catch (err: any) {

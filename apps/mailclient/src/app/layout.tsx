@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import ToastProvider from '@/components/ToastProvider';
 import ConfirmProvider from '@/components/ConfirmDialog';
+import CompanyParamSync from '@/components/CompanyParamSync';
 
 export const metadata: Metadata = {
   title: 'Saivaro Mail',
@@ -16,6 +17,7 @@ export default function RootLayout({
   return (
     <html lang="de">
       <body>
+        <CompanyParamSync />
         <ToastProvider>
           <ConfirmProvider>{children}</ConfirmProvider>
         </ToastProvider>
