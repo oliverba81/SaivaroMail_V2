@@ -8,6 +8,9 @@ import { validateWorkflow } from './workflow-validator';
 import { evaluateCondition } from './condition-evaluator';
 import { executeAction } from './action-executor';
 import { logEmailEventWithClient } from './email-events';
+import { getCompanyConfig } from './company-config';
+import { classifyEmailSpam, SpamClassificationResult } from './ai-spam-classifier';
+import type { CompanyConfig } from './company-config';
 
 /**
  * Führt eine Automatisierungsregel aus
@@ -70,7 +73,41 @@ export async function executeWorkflow(
       };
     }
 
-    // Folge den Edges zu Condition- und Action-Knoten
+    // Lade CompanyConfig einmalig für diesen Workflow-Lauf (für AI-Entscheidungen)
+    const companyConfig = await getCompanyConfig(client);
+
+    // Execution-Context für diesen Lauf (z.B. Spam-Infos, Caching)
+    const executionContext: {
+      spam: SpamClassificationResult | null;
+    } = {
+      spam: null,
+    };
+
+    const isWhitelistedSender = (
+      fromEmail: string | undefined,
+      whitelist: string[] | undefined
+    ): boolean => {
+      if (!fromEmail || !whitelist || whitelist.length === 0) return false;
+      const email = fromEmail.toLowerCase().trim();
+      const atIndex = email.lastIndexOf('@');
+      const domain = atIndex !== -1 ? email.substring(atIndex + 1) : '';
+
+      return whitelist.some((raw) => {
+        const entry = String(raw).toLowerCase().trim();
+        if (!entry) return false;
+        if (entry.startsWith('@')) {
+          const dom = entry.slice(1);
+          return domain === dom || email.endsWith(`@${dom}`);
+        }
+        if (entry.includes('@')) {
+          return email === entry;
+        }
+        // Nur Domain ohne @
+        return domain === entry || email.endsWith(`@${entry}`);
+      });
+    };
+
+    // Folge den Edges zu Condition-, Spam- und Action-Knoten
     // Verwende ein Set, um bereits verarbeitete Knoten zu tracken (verhindert Endlosschleifen bei fehlerhaften Workflows)
     const visitedNodes = new Set<string>();
     
@@ -90,16 +127,92 @@ export async function executeWorkflow(
         }
 
         // Condition-Knoten: Bedingung evaluieren
+        let conditionMet: boolean | null = null;
         if (node.type.includes('Condition')) {
           try {
-            const conditionMet = evaluateCondition(node.data, emailData);
-            if (!conditionMet) {
-              return; // Bedingung nicht erfüllt, stoppe hier
-            }
+            conditionMet = evaluateCondition(node.data, emailData);
           } catch (conditionError: any) {
             // Fehler bei Bedingungsauswertung: Bedingung als nicht erfüllt betrachten (fail-safe)
-            console.error(`[AutomationEngine] Fehler beim Auswerten der Bedingung für Knoten ${nodeId}:`, conditionError);
+            console.error(
+              `[AutomationEngine] Fehler beim Auswerten der Bedingung für Knoten ${nodeId}:`,
+              conditionError
+            );
+            conditionMet = false;
+          }
+        }
+
+        // Spam-Entscheidungsknoten: Spam-Check (Whitelist + AI) und entlang Ja/Nein verzweigen
+        if (node.type === 'spamDecisionNode') {
+          try {
+            if (!executionContext.spam) {
+              const whitelisted = isWhitelistedSender(
+                emailData.fromEmail,
+                (companyConfig as CompanyConfig).spamSenderWhitelist
+              );
+
+              if (whitelisted) {
+                executionContext.spam = {
+                  isSpam: false,
+                  score: 0,
+                  reason: 'Absender steht auf der Spam-Whitelist.',
+                  provider: companyConfig.aiProvider,
+                  fromCache: false,
+                };
+              } else {
+                executionContext.spam = await classifyEmailSpam(companyConfig, emailData);
+              }
+            }
+
+            const isSpam = executionContext.spam.isSpam;
+
+            // Wähle nur die Kanten, deren sourceHandle zum Ergebnis passt
+            const matchingEdges = workflow.workflowData.edges
+              .filter((e) => e.source === nodeId)
+              .filter((e) => {
+                if (isSpam) {
+                  return !e.sourceHandle || e.sourceHandle === 'yes';
+                }
+                return !e.sourceHandle || e.sourceHandle === 'no';
+              })
+              .sort((a, b) => {
+                const targetNodeA = workflow.workflowData.nodes.find((n) => n.id === a.target);
+                const targetNodeB = workflow.workflowData.nodes.find((n) => n.id === b.target);
+
+                const yA = targetNodeA?.position?.y ?? 0;
+                const yB = targetNodeB?.position?.y ?? 0;
+
+                if (yA !== yB) return yA - yB;
+
+                const xA = targetNodeA?.position?.x ?? 0;
+                const xB = targetNodeB?.position?.x ?? 0;
+                return xA - xB;
+              });
+
+            if (matchingEdges.length === 0) {
+              // Kein passender Ausgang – Pfad endet hier
+              return;
+            }
+
+            for (const edge of matchingEdges) {
+              try {
+                await processNode(edge.target);
+              } catch (nodeError: any) {
+                console.error(
+                  `[AutomationEngine] Fehler beim Verarbeiten des Folgeknotens ${edge.target} nach Spam-Entscheidung:`,
+                  nodeError
+                );
+              }
+            }
+
+            // Spam-Knoten hat seine Arbeit erledigt; reguläres Edge-Processing überspringen
             return;
+          } catch (spamError: any) {
+            const msg =
+              spamError?.message ||
+              'Unbekannter Fehler bei der Spam-Entscheidung, Standard: kein Spam, Pfad Nein.';
+            console.error(`[AutomationEngine] Fehler beim Spam-Check für Knoten ${nodeId}:`, msg);
+            error = msg;
+            // Bei Fehler: Standard-Entscheidung "kein Spam" und normale Edge-Logik (ohne sourceHandle-Filter) weiterlaufen lassen
           }
         }
 
@@ -111,7 +224,8 @@ export async function executeWorkflow(
               companyId,
               node,
               emailData,
-              workflow.userId
+              workflow.userId,
+              executionContext
             );
             if (result.success) {
               executedActions.push(result.actionName);
@@ -131,28 +245,59 @@ export async function executeWorkflow(
         }
 
         // Folge zu nächsten Knoten (auch wenn vorherige Aktion fehlgeschlagen ist)
-        // Sortiere Edges nach Y-Position der Zielknoten (von oben nach unten)
-        const outgoingEdges = workflow.workflowData.edges
-          .filter((e) => e.source === nodeId)
-          .sort((a, b) => {
-            // Finde Zielknoten für beide Edges
+        // Bestimme ausgehende Edges abhängig vom Knotentyp (Condition mit Ja/Nein, sonst alle)
+        const allEdges = workflow.workflowData.edges.filter((e) => e.source === nodeId);
+
+        const sortEdges = (edgesToSort: typeof allEdges) => {
+          return edgesToSort.sort((a, b) => {
             const targetNodeA = workflow.workflowData.nodes.find((n) => n.id === a.target);
             const targetNodeB = workflow.workflowData.nodes.find((n) => n.id === b.target);
-            
-            // Sortiere nach Y-Position (von oben nach unten)
+
             const yA = targetNodeA?.position?.y ?? 0;
             const yB = targetNodeB?.position?.y ?? 0;
-            
+
             if (yA !== yB) {
-              return yA - yB; // Aufsteigend nach Y (oben zuerst)
+              return yA - yB;
             }
-            
-            // Bei gleicher Y-Position: sortiere nach X (links zuerst)
+
             const xA = targetNodeA?.position?.x ?? 0;
             const xB = targetNodeB?.position?.x ?? 0;
             return xA - xB;
           });
-        
+        };
+
+        let outgoingEdges = allEdges;
+
+        if (node.type.includes('Condition')) {
+          const yesEdges = allEdges.filter((e) => e.sourceHandle === 'yes');
+          const noEdges = allEdges.filter((e) => e.sourceHandle === 'no');
+          const legacyEdges = allEdges.filter((e) => !e.sourceHandle);
+
+          if (conditionMet === true) {
+            if (yesEdges.length > 0) {
+              outgoingEdges = sortEdges(yesEdges);
+            } else if (legacyEdges.length > 0) {
+              outgoingEdges = sortEdges(legacyEdges);
+            } else {
+              // Kein sinnvoller True-Pfad definiert
+              return;
+            }
+          } else if (conditionMet === false) {
+            if (noEdges.length > 0) {
+              outgoingEdges = sortEdges(noEdges);
+            } else {
+              // Keine passenden Nein-Kanten: Pfad endet wie bisher
+              return;
+            }
+          } else {
+            // Sollte nicht vorkommen, aber zur Sicherheit: alle Edges wie bisher
+            outgoingEdges = sortEdges(allEdges);
+          }
+        } else {
+          // Nicht-Condition-Knoten: alle ausgehenden Edges verwenden
+          outgoingEdges = sortEdges(allEdges);
+        }
+
         for (const edge of outgoingEdges) {
           try {
             await processNode(edge.target);

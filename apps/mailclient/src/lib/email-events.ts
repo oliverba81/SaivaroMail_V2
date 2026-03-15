@@ -38,6 +38,9 @@ export interface EmailEventData {
   actionType?: string;
   departmentId?: string;
   departmentName?: string;
+  spamScore?: number;
+  spamReason?: string;
+  spamProvider?: string;
 }
 
 /**

@@ -1,12 +1,21 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { FiPaperclip, FiDownload, FiMail, FiVolume2, FiPause, FiPlay, FiPhone } from 'react-icons/fi';
 import { getDisplayFrom, getDisplayFromLabel } from '@/utils/email-helpers';
 import { normalizePhoneNumberForTel, formatPhoneNumberForDisplay } from '@/utils/phone-utils';
 import { useToast } from '@/components/ToastProvider';
 import EmailThreadView from './EmailThreadView';
+import EmailHtmlBody from './EmailHtmlBody';
+import {
+  bodyLooksLikeHtml,
+  sanitizeEmailHtml,
+  hasExternalImages,
+  extractExternalContentSources,
+} from '@/utils/email-html';
+import { getDisplayFromParsed } from '@/utils/email-helpers';
+import ExternalContentBanner from './ExternalContentBanner';
 
 interface Email {
   id: string;
@@ -44,6 +53,8 @@ interface EmailPreviewProps {
   showThreadView?: boolean;
   onReplyToEmail?: (emailId: string) => void;
   currentUserId?: string | null;
+  layoutPreferences?: import('@/hooks/useEmailState').LayoutPreferences;
+  saveLayoutPreferences?: (prefs: Partial<import('@/hooks/useEmailState').LayoutPreferences>) => void;
 }
 
 export default function EmailPreview({
@@ -56,6 +67,8 @@ export default function EmailPreview({
   showThreadView = false,
   onReplyToEmail,
   currentUserId,
+  layoutPreferences,
+  saveLayoutPreferences,
 }: EmailPreviewProps) {
   const router = useRouter();
   const toast = useToast();
@@ -74,6 +87,13 @@ export default function EmailPreview({
   const [ttsProvider, setTtsProvider] = useState<'browser' | 'elevenlabs' | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const hasStartedRef = useRef(false);
+  const [showExternalForThisEmail, setShowExternalForThisEmail] = useState(false);
+  const [savingExternalPrefs, setSavingExternalPrefs] = useState(false);
+
+  // Reset per-message override bei E-Mail-Wechsel
+  useEffect(() => {
+    setShowExternalForThisEmail(false);
+  }, [email?.id]);
 
   const loadEmailBody = useCallback(async (): Promise<string> => {
     if (!email?.id) return '';
@@ -95,15 +115,41 @@ export default function EmailPreview({
         return '';
       }
 
-      const data = await response.json();
+      // Antwort robust als JSON lesen, auch wenn Body leer oder kein gültiges JSON ist
+      let data: any = null;
+      const contentType = response.headers.get('content-type') || '';
+
+      try {
+        if (contentType.includes('application/json')) {
+          const text = await response.text();
+          if (text && text.trim().length > 0) {
+            data = JSON.parse(text);
+          } else {
+            console.warn('EmailPreview: Leere JSON-Antwort beim Laden des E-Mail-Bodies', {
+              status: response.status,
+            });
+          }
+        } else if (process.env.NODE_ENV === 'development') {
+          console.warn('EmailPreview: Unerwarteter Content-Type beim Laden des E-Mail-Bodies', {
+            status: response.status,
+            contentType,
+          });
+        }
+      } catch (parseError) {
+        console.error('EmailPreview: Fehler beim Parsen der JSON-Antwort für den E-Mail-Body', parseError);
+      }
+
       if (email?.id !== emailIdAtStart) return '';
 
-      if (response.ok) {
+      if (response.ok && data && data.email) {
         const body = data.email?.body || '';
         setEmailBody(body);
         return body;
       }
-      const fallback = '(Inhalt konnte nicht geladen werden)';
+
+      const fallback = response.ok
+        ? '(Inhalt konnte nicht geladen werden)'
+        : '(Fehler beim Laden des Inhalts)';
       setEmailBody(fallback);
       return fallback;
     } catch (err) {
@@ -118,11 +164,20 @@ export default function EmailPreview({
 
   // Body kommt primär aus email (loadEmailDetails). Fallback: nur wenn loading=false und Body fehlt (z.B. Fehler)
   useEffect(() => {
-    if (email?.body) {
-      setEmailBody(email.body);
-    } else if (!email) {
+    if (!email) {
       setEmailBody('');
-    } else if (!loading && email.id) {
+      return;
+    }
+
+    // Initialzustand beim E-Mail-Wechsel: kurz leeren, dann mit bevorzugter Quelle befüllen
+    setEmailBody('');
+
+    if (email.body) {
+      setEmailBody(email.body);
+      return;
+    }
+
+    if (!loading && email.id) {
       loadEmailBody();
     }
   }, [email?.id, email?.body, loading, loadEmailBody]);
@@ -174,6 +229,109 @@ export default function EmailPreview({
       setAttachments([]);
     }
   }, [email?.id]);
+
+  const effectiveBody = emailBody || email?.body || '';
+  const isHtmlBody = useMemo(() => bodyLooksLikeHtml(effectiveBody), [effectiveBody]);
+
+  // Externe Inhalte anzeigen? (LayoutPreferences + per-message Override)
+  const allowExternalContent = useMemo(() => {
+    if (showExternalForThisEmail) return true;
+    if (layoutPreferences?.externalContentAlwaysAllow) return true;
+    if (email?.type === 'phone_note') return false;
+    const parsed = getDisplayFromParsed(email || {});
+    const senderEmail = parsed.email?.toLowerCase();
+    if (
+      senderEmail &&
+      (layoutPreferences?.externalContentAllowedSenders ?? []).some((s) => s.toLowerCase() === senderEmail)
+    )
+      return true;
+    const domains = extractExternalContentSources(effectiveBody);
+    if (domains.length > 0) {
+      const allowed = (layoutPreferences?.externalContentAllowedDomains ?? []).map((d) => d.toLowerCase());
+      if (domains.every((d) => allowed.includes(d))) return true;
+    }
+    return false;
+  }, [
+    showExternalForThisEmail,
+    layoutPreferences?.externalContentAlwaysAllow,
+    layoutPreferences?.externalContentAllowedSenders,
+    layoutPreferences?.externalContentAllowedDomains,
+    email,
+    effectiveBody,
+  ]);
+
+  const sanitizedHtml = useMemo(
+    () =>
+      isHtmlBody
+        ? sanitizeEmailHtml(effectiveBody, { allowExternalContent, preserveMailLayout: true })
+        : '',
+    [effectiveBody, isHtmlBody, allowExternalContent]
+  );
+
+  const hasExtImages = useMemo(
+    () => isHtmlBody && hasExternalImages(effectiveBody),
+    [effectiveBody, isHtmlBody]
+  );
+  const extractedDomains = useMemo(
+    () => extractExternalContentSources(effectiveBody),
+    [effectiveBody]
+  );
+  const parsedSender = useMemo(
+    () => (email && email.type !== 'phone_note' ? getDisplayFromParsed(email).email : undefined),
+    [email]
+  );
+
+  const showBanner = !loadingBody && isHtmlBody && hasExtImages && !allowExternalContent;
+
+  const handleAllowDomain = useCallback(
+    (domain: string) => {
+      if (!saveLayoutPreferences || !layoutPreferences) return;
+      const existing = layoutPreferences.externalContentAllowedDomains ?? [];
+      const normalized = domain.toLowerCase().trim();
+      if (existing.some((d) => d.toLowerCase() === normalized)) return;
+      setSavingExternalPrefs(true);
+      Promise.resolve(
+        saveLayoutPreferences({
+          externalContentAllowedDomains: [...existing, normalized],
+        })
+      ).finally(() => setSavingExternalPrefs(false));
+    },
+    [saveLayoutPreferences, layoutPreferences]
+  );
+
+  const handleAllowSender = useCallback(
+    (sender: string) => {
+      if (!saveLayoutPreferences || !sender.includes('@')) return;
+      const existing = layoutPreferences?.externalContentAllowedSenders ?? [];
+      const normalized = sender.toLowerCase().trim();
+      if (existing.some((s) => s.toLowerCase() === normalized)) return;
+      setSavingExternalPrefs(true);
+      Promise.resolve(
+        saveLayoutPreferences({
+          externalContentAllowedSenders: [...existing, normalized],
+        })
+      ).finally(() => setSavingExternalPrefs(false));
+    },
+    [saveLayoutPreferences, layoutPreferences]
+  );
+
+  const handleAllowAllDomains = useCallback(
+    (domains: string[]) => {
+      if (!saveLayoutPreferences) return;
+      const existing = (layoutPreferences?.externalContentAllowedDomains ?? []).map((d) => d.toLowerCase());
+      const newDomains = domains
+        .map((d) => d.toLowerCase().trim())
+        .filter((d) => d && !existing.includes(d));
+      if (newDomains.length === 0) return;
+      setSavingExternalPrefs(true);
+      Promise.resolve(
+        saveLayoutPreferences({
+          externalContentAllowedDomains: [...existing, ...newDomains],
+        })
+      ).finally(() => setSavingExternalPrefs(false));
+    },
+    [saveLayoutPreferences, layoutPreferences]
+  );
 
   const loadAttachments = async () => {
     if (!email?.id) return;
@@ -747,6 +905,8 @@ export default function EmailPreview({
         formatDate={formatDate}
         onReplyToEmail={onReplyToEmail}
         currentUserId={currentUserId}
+        layoutPreferences={layoutPreferences}
+        saveLayoutPreferences={saveLayoutPreferences}
       />
     );
   }
@@ -1026,20 +1186,41 @@ export default function EmailPreview({
         style={{
           flex: 1,
           padding: '0.75rem',
-          whiteSpace: 'pre-wrap',
+          whiteSpace: isHtmlBody ? 'normal' : 'pre-wrap',
           lineHeight: '1.6',
-          overflowY: 'auto',
+          overflowY: 'hidden',
           color: '#333',
           fontSize: '0.875rem',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
+        {showBanner && (
+          <div style={{ marginBottom: '0.5rem' }}>
+            <ExternalContentBanner
+              domains={extractedDomains}
+              sender={parsedSender}
+              onShowForThisMessage={() => setShowExternalForThisEmail(true)}
+              onAllowDomain={saveLayoutPreferences ? handleAllowDomain : undefined}
+              onAllowSender={
+                saveLayoutPreferences && parsedSender?.includes('@') ? handleAllowSender : undefined
+              }
+              onAllowAllDomains={
+                saveLayoutPreferences && extractedDomains.length >= 2 ? handleAllowAllDomains : undefined
+              }
+              saving={savingExternalPrefs}
+            />
+          </div>
+        )}
         {loadingBody ? (
           <div style={{ textAlign: 'center', padding: '2rem' }}>
             <div className="spinner" style={{ margin: '0 auto', width: '20px', height: '20px' }}></div>
             <p style={{ marginTop: '0.5rem', color: '#6c757d', fontSize: '0.8rem' }}>Lade Inhalt...</p>
           </div>
+        ) : !effectiveBody ? (
+          '(Kein Inhalt)'
         ) : (
-          emailBody || email.body || '(Kein Inhalt)'
+          <EmailHtmlBody html={sanitizedHtml} isHtml={isHtmlBody} />
         )}
       </div>
     </div>

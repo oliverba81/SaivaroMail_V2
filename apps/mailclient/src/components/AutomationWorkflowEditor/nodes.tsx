@@ -13,6 +13,7 @@ import {
   FiBriefcase,
   FiCheckCircle,
   FiMail,
+  FiAlertTriangle,
 } from 'react-icons/fi';
 
 export const CONDITION_FIELD_LABELS: Record<string, string> = {
@@ -89,9 +90,32 @@ export function ConditionNode({ data, selected }: { data: any; selected: boolean
         minWidth: '200px',
         boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
       }}
+      title="Bedingung mit Ja-/Nein-Ausgängen: erfüllt (Ja) oder nicht erfüllt (Nein)."
     >
       <Handle type="target" position={Position.Left} style={{ background: '#ffc107', width: '10px', height: '10px' }} />
-      <Handle type="source" position={Position.Right} style={{ background: '#ffc107', width: '10px', height: '10px' }} />
+      {/* Ja-/Nein-Ausgänge */}
+      <Handle
+        id="yes"
+        type="source"
+        position={Position.Right}
+        style={{
+          top: '35%',
+          background: '#ffc107',
+          width: '10px',
+          height: '10px',
+        }}
+      />
+      <Handle
+        id="no"
+        type="source"
+        position={Position.Right}
+        style={{
+          top: '65%',
+          background: '#ffc107',
+          width: '10px',
+          height: '10px',
+        }}
+      />
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
         <FiFilter style={{ color: '#ffc107' }} />
         <strong>{data.label || 'Bedingung'}</strong>
@@ -101,6 +125,69 @@ export function ConditionNode({ data, selected }: { data: any; selected: boolean
           {summary}
         </div>
       )}
+      <div style={{ fontSize: '0.75rem', color: '#6c757d', marginTop: '0.5rem', display: 'flex', justifyContent: 'space-between' }}>
+        <span>Ja = erfüllt</span>
+        <span>Nein = nicht erfüllt</span>
+      </div>
+    </div>
+  );
+}
+
+export function SpamDecisionNode({ data, selected }: { data: any; selected: boolean }) {
+  const label = data.label || 'Spam-Prüfung (AI)';
+
+  return (
+    <div
+      style={{
+        padding: '1rem',
+        backgroundColor: selected ? '#fdecea' : 'white',
+        border: selected ? '2px solid #dc3545' : '2px solid #dc3545',
+        borderRadius: '8px',
+        minWidth: '220px',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+        position: 'relative',
+      }}
+      title="Dieser Knoten prüft per AI, ob eine Nachricht Spam ist und verzweigt in Ja/Nein."
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={{ background: '#dc3545', width: '10px', height: '10px' }}
+      />
+      {/* Ja-/Nein-Ausgänge mit unterschiedlichen Handles */}
+      <Handle
+        id="yes"
+        type="source"
+        position={Position.Right}
+        style={{
+          top: '35%',
+          background: '#dc3545',
+          width: '10px',
+          height: '10px',
+        }}
+      />
+      <Handle
+        id="no"
+        type="source"
+        position={Position.Right}
+        style={{
+          top: '65%',
+          background: '#28a745',
+          width: '10px',
+          height: '10px',
+        }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+        <FiAlertTriangle style={{ color: '#dc3545' }} />
+        <strong>{label}</strong>
+      </div>
+      <div style={{ fontSize: '0.8rem', color: '#6c757d' }}>
+        <div>AI-Entscheidung: Spam oder kein Spam.</div>
+        <div style={{ marginTop: '0.25rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+          <span style={{ color: '#dc3545' }}>Ja (Spam)</span>
+          <span style={{ color: '#28a745' }}>Nein (kein Spam)</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -196,6 +283,7 @@ export function DepartmentNode({ data, selected }: { data: any; selected: boolea
 export const nodeTypes: NodeTypes = {
   startNode: StartNode,
   conditionNode: ConditionNode,
+  spamDecisionNode: SpamDecisionNode,
   actionNode: ActionNode,
   departmentNode: DepartmentNode,
 };

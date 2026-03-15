@@ -90,6 +90,7 @@ export async function GET(request: NextRequest) {
           aiProvider: 'openai',
           geminiApiKey: null,
           geminiModel: 'gemini-2.0-flash',
+          spamSenderWhitelist: [],
         };
       }
       
@@ -206,6 +207,7 @@ export async function GET(request: NextRequest) {
           aiProvider: companyConfig.aiProvider,
           geminiApiKey: companyConfig.geminiApiKey || null,
           geminiModel: companyConfig.geminiModel,
+          spamSenderWhitelist: companyConfig.spamSenderWhitelist ?? [],
         };
         if (userRole === 'admin') {
           responsePayload.companyEmailFilters = companyEmailFilters;
@@ -293,10 +295,11 @@ export async function GET(request: NextRequest) {
         elevenlabsVoiceId: companyConfig.elevenlabsVoiceId || null,
         elevenlabsEnabled: companyConfig.elevenlabsEnabled ?? false,
         themeRequired: companyConfig.themeRequired ?? false,
-        permanentDeleteAfterDays: companyConfig.permanentDeleteAfterDays ?? 0,
+          permanentDeleteAfterDays: companyConfig.permanentDeleteAfterDays ?? 0,
         aiProvider: companyConfig.aiProvider,
         geminiApiKey: companyConfig.geminiApiKey || null,
-        geminiModel: companyConfig.geminiModel,
+          geminiModel: companyConfig.geminiModel,
+          spamSenderWhitelist: companyConfig.spamSenderWhitelist ?? [],
       };
       if (userRole === 'admin') {
         settingsPayload.companyEmailFilters = companyEmailFilters.length > 0 ? companyEmailFilters : userSettingsFilters;
@@ -393,6 +396,7 @@ export async function PATCH(request: NextRequest) {
       aiProvider,
       geminiApiKey,
       geminiModel,
+      spamSenderWhitelist,
     } = body;
 
     // Entferne die alte redundante Spalte 'participants_detailed' aus tableColumns
@@ -504,6 +508,25 @@ export async function PATCH(request: NextRequest) {
           );
         }
         configToSave.permanentDeleteAfterDays = days;
+      }
+
+      if (spamSenderWhitelist !== undefined) {
+        const normalized = Array.isArray(spamSenderWhitelist)
+          ? spamSenderWhitelist
+              .map((s: any) => String(s).toLowerCase().trim())
+              .filter((s) => s.length > 0)
+          : [];
+        // Einfache Validierung: erlaubt sind E-Mails oder Domains, z. B. foo@bar.de, @firma.de, firma.de
+        const invalid = normalized.find(
+          (s) => s.length < 3 || s.includes(' ') || s.split('@').length > 3
+        );
+        if (invalid) {
+          return NextResponse.json(
+            { error: `Ungültiger Eintrag in der Spam-Whitelist: "${invalid}"` },
+            { status: 400 }
+          );
+        }
+        configToSave.spamSenderWhitelist = normalized;
       }
       
       await saveCompanyConfig(client, configToSave);

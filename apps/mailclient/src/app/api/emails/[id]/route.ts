@@ -137,8 +137,9 @@ export async function GET(
 
 /**
  * PATCH /api/emails/[id]
- * Aktualisiert Read-, Completed- und/oder Theme-Status einer einzelnen E-Mail.
- * Body: { read?: boolean, completed?: boolean, themeId?: string | null } – mindestens eines muss gesetzt sein.
+ * Aktualisiert Status-Felder einer einzelnen E-Mail.
+ * Body: { read?: boolean, completed?: boolean, themeId?: string | null, deleted?: boolean, spam?: boolean, important?: boolean }
+ * – mindestens eines muss gesetzt sein.
  */
 export async function PATCH(
   request: NextRequest,
@@ -154,7 +155,14 @@ export async function PATCH(
 
   const { client, payload } = ctx;
 
-  let body: { read?: boolean; completed?: boolean; themeId?: string | null };
+  let body: {
+    read?: boolean;
+    completed?: boolean;
+    themeId?: string | null;
+    deleted?: boolean;
+    spam?: boolean;
+    important?: boolean;
+  };
   try {
     body = await request.json();
   } catch {
@@ -164,6 +172,9 @@ export async function PATCH(
   const read = body.read;
   const completed = body.completed;
   const themeId = body.themeId;
+  const deleted = body.deleted;
+  const spam = body.spam;
+  const important = body.important;
 
   if (read !== undefined && typeof read !== 'boolean') {
     return NextResponse.json({ error: 'read muss ein boolean sein' }, { status: 400 });
@@ -174,9 +185,25 @@ export async function PATCH(
   if (themeId !== undefined && themeId !== null && typeof themeId !== 'string') {
     return NextResponse.json({ error: 'themeId muss ein string oder null sein' }, { status: 400 });
   }
-  if (read === undefined && completed === undefined && themeId === undefined) {
+  if (deleted !== undefined && typeof deleted !== 'boolean') {
+    return NextResponse.json({ error: 'deleted muss ein boolean sein' }, { status: 400 });
+  }
+  if (spam !== undefined && typeof spam !== 'boolean') {
+    return NextResponse.json({ error: 'spam muss ein boolean sein' }, { status: 400 });
+  }
+  if (important !== undefined && typeof important !== 'boolean') {
+    return NextResponse.json({ error: 'important muss ein boolean sein' }, { status: 400 });
+  }
+  if (
+    read === undefined &&
+    completed === undefined &&
+    themeId === undefined &&
+    deleted === undefined &&
+    spam === undefined &&
+    important === undefined
+  ) {
     return NextResponse.json(
-      { error: 'read, completed oder themeId muss gesetzt sein' },
+      { error: 'read, completed, themeId, deleted, spam oder important muss gesetzt sein' },
       { status: 400 }
     );
   }
@@ -205,6 +232,9 @@ export async function PATCH(
     let updatedRead: boolean | undefined;
     let updatedCompleted: boolean | undefined;
     let updatedThemeId: string | null | undefined;
+    let updatedDeleted: boolean | undefined;
+    let updatedSpam: boolean | undefined;
+    let updatedImportant: boolean | undefined;
 
     if (read !== undefined) {
       if (read) {
@@ -251,10 +281,45 @@ export async function PATCH(
       updatedThemeId = finalThemeId;
     }
 
-    const responseEmail: { id: string; read?: boolean; completed?: boolean; themeId?: string | null } = { id: emailId };
+    if (deleted !== undefined) {
+      await client.query(
+        `UPDATE emails SET deleted_at = CASE WHEN $1 THEN NOW() ELSE NULL END WHERE id = $2`,
+        [deleted, emailId]
+      );
+      updatedDeleted = deleted;
+    }
+
+    if (spam !== undefined) {
+      await client.query(
+        `UPDATE emails SET spam_at = CASE WHEN $1 THEN NOW() ELSE NULL END WHERE id = $2`,
+        [spam, emailId]
+      );
+      updatedSpam = spam;
+    }
+
+    if (important !== undefined) {
+      await client.query(
+        `UPDATE emails SET important_at = CASE WHEN $1 THEN NOW() ELSE NULL END WHERE id = $2`,
+        [important, emailId]
+      );
+      updatedImportant = important;
+    }
+
+    const responseEmail: {
+      id: string;
+      read?: boolean;
+      completed?: boolean;
+      themeId?: string | null;
+      deleted?: boolean;
+      spam?: boolean;
+      important?: boolean;
+    } = { id: emailId };
     if (updatedRead !== undefined) responseEmail.read = updatedRead;
     if (updatedCompleted !== undefined) responseEmail.completed = updatedCompleted;
     if (updatedThemeId !== undefined) responseEmail.themeId = updatedThemeId;
+    if (updatedDeleted !== undefined) responseEmail.deleted = updatedDeleted;
+    if (updatedSpam !== undefined) responseEmail.spam = updatedSpam;
+    if (updatedImportant !== undefined) responseEmail.important = updatedImportant;
 
     return NextResponse.json({ email: responseEmail });
   } finally {

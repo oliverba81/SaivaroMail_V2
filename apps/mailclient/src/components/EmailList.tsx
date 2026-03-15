@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import { FiBriefcase, FiList, FiLayers, FiMessageSquare, FiInbox, FiMail } from 'react-icons/fi';
 import EmailListItem from './EmailListItem';
 import EmailContextMenu from './EmailContextMenu';
@@ -56,6 +55,7 @@ interface TableColumn {
 export interface EmailListProps {
   emails: Email[];
   loading: boolean;
+  loadingMore?: boolean;
   searchQuery: string;
   filter: 'all' | 'read' | 'unread';
   selectedEmails: Set<string>;
@@ -93,6 +93,8 @@ export interface EmailListProps {
   hasNext?: boolean;
   hasPrevious?: boolean;
   onPageChange?: (newPage: number) => void;
+  /** Optionaler expliziter Nachlade-Handler (wird vom Plan später über handleLoadMore befüllt) */
+  onLoadMore?: () => void;
   onEmailHover?: (emailId: string) => void;
   showThreadView?: boolean;
   onShowThreadViewChange?: (value: boolean) => void;
@@ -110,6 +112,7 @@ export interface EmailListProps {
 const EmailList: React.FC<EmailListProps> = ({
   emails,
   loading,
+  loadingMore = false,
   searchQuery,
   filter,
   selectedEmails,
@@ -155,6 +158,7 @@ const EmailList: React.FC<EmailListProps> = ({
   activeReplyToId,
   currentUserId,
   onNewCompose,
+  onLoadMore,
 }: EmailListProps) => {
   const toast = useToast();
   const [contextMenu, setContextMenu] = useState<{ emailId: string; x: number; y: number } | null>(null);
@@ -165,20 +169,9 @@ const EmailList: React.FC<EmailListProps> = ({
   const [savingDepartments, setSavingDepartments] = useState(false);
   const [viewMode, setViewMode] = useState<'normal' | 'grouped'>('normal');
 
-  const parentRef = useRef<HTMLDivElement>(null);
-
   const toggleThreadView = () => {
     onShowThreadViewChange?.(!showThreadView);
   };
-
-  // Virtualisierung für E-Mail-Liste (nur wenn E-Mails vorhanden sind)
-  const virtualizer = useVirtualizer({
-    count: emails.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 72, // Geschätzte Zeilenhöhe für kompakte Listenansicht mit Tags und Themen (erhöht für zusätzlichen Abstand)
-    overscan: 10, // Rendere 10 zusätzliche Items außerhalb des sichtbaren Bereichs
-    enabled: emails.length > 0, // Nur aktivieren wenn E-Mails vorhanden sind
-  });
 
   // Lade Abteilungen beim Öffnen des Modals
   useEffect(() => {
@@ -417,10 +410,9 @@ const EmailList: React.FC<EmailListProps> = ({
           </div>
 
           {/* E-Mail-Liste */}
-          <div 
-            ref={parentRef}
+          <div
             className="flex-1 overflow-y-auto bg-white"
-            style={{ 
+            style={{
               minHeight: 0,
             }}
           >
@@ -440,91 +432,51 @@ const EmailList: React.FC<EmailListProps> = ({
                 currentUserId={currentUserId}
               />
             ) : (
-              <div
-                style={{
-                  height: `${virtualizer.getTotalSize()}px`,
-                  width: '100%',
-                  position: 'relative',
-                }}
-              >
-                {virtualizer.getVirtualItems().map((virtualRow) => {
-                  const email = emails[virtualRow.index];
-                  return (
-                    <div
-                      key={virtualRow.key}
-                      data-index={virtualRow.index}
-                      ref={virtualizer.measureElement}
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        transform: `translateY(${virtualRow.start}px)`,
-                      }}
-                    >
-                      <EmailListItem
-                        email={email}
-                        isSelected={selectedEmails.has(email.id)}
-                        onSelect={onSelectEmail}
-                        onClick={onEmailClick}
-                        formatDate={formatDate}
-                        isActive={listActiveId !== null && email.id === listActiveId}
-                        index={virtualRow.index}
-                        onEmailHover={onEmailHover}
-                        onContextMenu={handleContextMenu}
-                        replyToIds={replyToIds}
-                        activeReplyToId={activeReplyToId}
-                        currentUserId={currentUserId}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+              <>
+                {emails.map((email, index) => (
+                  <EmailListItem
+                    key={email.id}
+                    email={email}
+                    isSelected={selectedEmails.has(email.id)}
+                    onSelect={onSelectEmail}
+                    onClick={onEmailClick}
+                    formatDate={formatDate}
+                    isActive={listActiveId !== null && email.id === listActiveId}
+                    index={index}
+                    onEmailHover={onEmailHover}
+                    onContextMenu={handleContextMenu}
+                    replyToIds={replyToIds}
+                    activeReplyToId={activeReplyToId}
+                    currentUserId={currentUserId}
+                  />
+                ))}
+              </>
             )}
           </div>
 
-      {/* Paginierung-Navigation */}
-      {totalPages > 1 && onPageChange && (
-        <div
-          style={{
-            padding: '0.75rem 1rem',
-            borderTop: '1px solid #e9ecef',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            backgroundColor: '#f8f9fa',
-            flexShrink: 0,
-          }}
-        >
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={() => onPageChange(page - 1)}
-              disabled={!hasPrevious || loading}
-              variant="secondary"
-              className="text-sm px-3 py-1.5"
-              title="Vorherige Seite"
-            >
-              <span>←</span>
-              <span>Vorherige</span>
-            </Button>
-            
-            <span className="text-sm text-gray-500 px-2">
-              Seite {page + 1} von {totalPages} ({total} E-Mails)
-            </span>
-            
-            <Button
-              onClick={() => onPageChange(page + 1)}
-              disabled={!hasNext || loading}
-              variant="secondary"
-              className="text-sm px-3 py-1.5"
-              title="Nächste Seite"
-            >
-              <span>Nächste</span>
-              <span>→</span>
-            </Button>
-          </div>
-        </div>
-      )}
+          {loadingMore && hasNext && (
+            <div className="py-3 text-center text-sm text-gray-500">
+              Weitere Elemente werden geladen...
+            </div>
+          )}
+
+          {hasNext && !loadingMore && (
+            <div className="py-3 text-center">
+              <Button
+                variant="secondary"
+                onClick={onLoadMore}
+                disabled={!onLoadMore}
+              >
+                Weitere E-Mails laden
+              </Button>
+            </div>
+          )}
+
+          {!hasNext && total > 0 && (
+            <div className="py-3 text-center text-xs text-gray-400">
+              Alle Elemente geladen.
+            </div>
+          )}
         </>
       )}
 

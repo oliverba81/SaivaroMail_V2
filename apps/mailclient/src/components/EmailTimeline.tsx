@@ -74,6 +74,9 @@ interface EmailEvent {
     extractedFrom?: string;
     changeReason?: string;
     messageCount?: number;
+    spamScore?: number;
+    spamReason?: string;
+    spamProvider?: string;
   };
   createdAt: string;
   activeRules?: Array<{
@@ -326,6 +329,24 @@ export default function EmailTimeline({ emailId, notes: notesProp, onNotesChange
       case 'marked_important':
         return 'Als wichtig markiert';
       case 'marked_spam':
+        if (event.eventData.spamReason || event.eventData.spamScore !== undefined || event.eventData.spamProvider) {
+          const parts: string[] = [];
+          if (event.eventData.spamProvider) {
+            parts.push(`Provider: ${event.eventData.spamProvider}`);
+          }
+          if (event.eventData.spamScore !== undefined) {
+            const score = typeof event.eventData.spamScore === 'number'
+              ? event.eventData.spamScore
+              : Number(event.eventData.spamScore);
+            if (!Number.isNaN(score)) {
+              parts.push(`Score: ${score.toFixed(2)}`);
+            }
+          }
+          if (event.eventData.spamReason) {
+            parts.push(`Grund: ${event.eventData.spamReason}`);
+          }
+          return `Als Spam markiert (${parts.join(' | ')})`;
+        }
         return 'Als Spam markiert';
       case 'marked_completed':
         return 'Als erledigt markiert';

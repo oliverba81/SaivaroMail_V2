@@ -25,6 +25,7 @@ interface EmailPageLayoutProps {
   // States (von useEmailState)
   emails: Email[];
   loading: boolean;
+  loadingMore: boolean;
   error: string;
   searchQuery: string;
   filter: 'all' | 'read' | 'unread' | 'completed' | 'not_completed';
@@ -89,11 +90,15 @@ interface EmailPageLayoutProps {
   onToggleTimeline: () => void;
   showThreadView: boolean;
   onShowThreadViewChange: (value: boolean) => void;
+  layoutPreferences?: import('@/hooks/useEmailState').LayoutPreferences;
+  saveLayoutPreferences?: (prefs: Partial<import('@/hooks/useEmailState').LayoutPreferences>) => void;
+  onLoadMore?: () => void;
 }
 
 export default function EmailPageLayout({
   emails,
   loading,
+  loadingMore,
   error,
   searchQuery,
   filter,
@@ -154,6 +159,9 @@ export default function EmailPageLayout({
   onToggleTimeline,
   showThreadView,
   onShowThreadViewChange,
+  layoutPreferences,
+  saveLayoutPreferences,
+  onLoadMore,
 }: EmailPageLayoutProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
@@ -390,6 +398,7 @@ export default function EmailPageLayout({
             <EmailList
               emails={emails}
               loading={loading}
+              loadingMore={loadingMore}
               searchQuery={searchQuery}
               filter={filter as 'all' | 'read' | 'unread'}
               selectedEmails={selectedEmails}
@@ -415,6 +424,7 @@ export default function EmailPageLayout({
               hasNext={hasNext}
               hasPrevious={hasPrevious}
               onPageChange={onPageChange}
+              onLoadMore={onLoadMore}
               onSearchChange={onSearchQueryChange}
               onEmailHover={onEmailHover}
               onFilterChange={onFilterChange}
@@ -472,6 +482,8 @@ export default function EmailPageLayout({
               onRefresh={onRefresh}
               onReplyToEmail={handleReplyToEmail}
               currentUserId={currentUserId}
+              layoutPreferences={layoutPreferences}
+              saveLayoutPreferences={saveLayoutPreferences}
             />
           </div>
         </div>

@@ -7,9 +7,104 @@ import GeneralSettings from '@/components/GeneralSettings';
 import SettingsExportImport from '@/components/SettingsExportImport';
 import Card from '@/components/Card';
 import Button from '@/components/Button';
-import { FiSave, FiVolume2 } from 'react-icons/fi';
+import { FiSave, FiVolume2, FiPlus, FiTrash2 } from 'react-icons/fi';
 
 export type AiProvider = 'openai' | 'google';
+
+function ExternalContentList({
+  items,
+  placeholder,
+  onAdd,
+  onRemove,
+}: {
+  items: string[];
+  placeholder: string;
+  onAdd: (value: string) => void;
+  onRemove: (value: string) => void;
+}) {
+  const [inputValue, setInputValue] = useState('');
+
+  const handleAdd = () => {
+    const trimmed = inputValue.trim();
+    if (trimmed) {
+      onAdd(trimmed);
+      setInputValue('');
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+        <input
+          type="text"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAdd())}
+          placeholder={placeholder}
+          style={{
+            flex: 1,
+            padding: '0.5rem',
+            border: '1px solid #d1d5db',
+            borderRadius: '4px',
+            fontSize: '0.9rem',
+          }}
+        />
+        <button
+          type="button"
+          onClick={handleAdd}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.25rem',
+            padding: '0.5rem 0.75rem',
+            border: '1px solid #d1d5db',
+            borderRadius: '4px',
+            backgroundColor: '#f8f9fa',
+            cursor: 'pointer',
+            fontSize: '0.875rem',
+          }}
+        >
+          <FiPlus size={14} />
+          Hinzufügen
+        </button>
+      </div>
+      {items.length > 0 && (
+        <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+          {items.map((item) => (
+            <li
+              key={item}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.375rem 0',
+                borderBottom: '1px solid #eee',
+                fontSize: '0.875rem',
+              }}
+            >
+              <span style={{ wordBreak: 'break-all' }}>{item}</span>
+              <button
+                type="button"
+                onClick={() => onRemove(item)}
+                aria-label={`${item} entfernen`}
+                style={{
+                  padding: '0.25rem',
+                  border: 'none',
+                  backgroundColor: 'transparent',
+                  cursor: 'pointer',
+                  color: '#dc2626',
+                  flexShrink: 0,
+                }}
+              >
+                <FiTrash2 size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export interface InitialSettings {
   fetchIntervalMinutes?: number;
@@ -23,6 +118,7 @@ export interface InitialSettings {
   aiProvider?: AiProvider;
   geminiApiKey?: string | null;
   geminiModel?: string;
+   spamSenderWhitelist?: string[];
 }
 
 interface SettingsGeneralTabProps {
@@ -37,6 +133,14 @@ interface SettingsGeneralTabProps {
   onCardOrderChange?: (order: string[]) => void;
   onSaveFilters?: () => Promise<void>;
   initialSettings?: InitialSettings;
+  externalContentAlwaysAllow?: boolean;
+  externalContentAllowedDomains?: string[];
+  externalContentAllowedSenders?: string[];
+  onExternalContentPrefsChange?: (prefs: {
+    externalContentAlwaysAllow?: boolean;
+    externalContentAllowedDomains?: string[];
+    externalContentAllowedSenders?: string[];
+  }) => void;
 }
 
 export default function SettingsGeneralTab({
@@ -51,6 +155,10 @@ export default function SettingsGeneralTab({
   onCardOrderChange,
   onSaveFilters: _onSaveFilters,
   initialSettings,
+  externalContentAlwaysAllow = false,
+  externalContentAllowedDomains = [],
+  externalContentAllowedSenders = [],
+  onExternalContentPrefsChange,
 }: SettingsGeneralTabProps) {
   const router = routerProp || useRouter();
   const toast = toastProp || useToast();
@@ -73,6 +181,7 @@ export default function SettingsGeneralTab({
   const [showElevenlabsKey, setShowElevenlabsKey] = useState(false);
   const [themeRequired, setThemeRequired] = useState(false);
   const [permanentDeleteAfterDays, setPermanentDeleteAfterDays] = useState(0);
+  const [spamSenderWhitelist, setSpamSenderWhitelist] = useState<string[]>([]);
 
   // Original-Konfiguration zum Erkennen ungespeicherter Änderungen
   const originalConfigRef = useRef<{
@@ -86,6 +195,7 @@ export default function SettingsGeneralTab({
     elevenlabsEnabled: boolean;
     themeRequired: boolean;
     permanentDeleteAfterDays: number;
+    spamSenderWhitelist: string[];
   }>({
     aiProvider: 'openai',
     openaiApiKey: '',
@@ -97,6 +207,7 @@ export default function SettingsGeneralTab({
     elevenlabsEnabled: false,
     themeRequired: false,
     permanentDeleteAfterDays: 0,
+    spamSenderWhitelist: [],
   });
 
   const [_hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -152,6 +263,13 @@ export default function SettingsGeneralTab({
       setPermanentDeleteAfterDays(days);
       originalConfigRef.current.permanentDeleteAfterDays = days;
     }
+    if (Array.isArray(initialSettings.spamSenderWhitelist)) {
+      const normalized = initialSettings.spamSenderWhitelist.map((s) =>
+        String(s).toLowerCase().trim()
+      );
+      setSpamSenderWhitelist(normalized);
+      originalConfigRef.current.spamSenderWhitelist = normalized;
+    }
   }, [initialSettings]);
 
   // Unsaved-Changes-Tracking
@@ -167,7 +285,9 @@ export default function SettingsGeneralTab({
       elevenlabsVoiceId !== originalConfigRef.current.elevenlabsVoiceId ||
       elevenlabsEnabled !== originalConfigRef.current.elevenlabsEnabled ||
       themeRequired !== originalConfigRef.current.themeRequired ||
-      permanentDeleteAfterDays !== originalConfigRef.current.permanentDeleteAfterDays;
+      permanentDeleteAfterDays !== originalConfigRef.current.permanentDeleteAfterDays ||
+      JSON.stringify(spamSenderWhitelist) !==
+        JSON.stringify(originalConfigRef.current.spamSenderWhitelist);
 
     setHasUnsavedChanges(hasChanges);
     if (onHasUnsavedChanges) {
@@ -207,6 +327,7 @@ export default function SettingsGeneralTab({
         elevenlabsEnabled,
         themeRequired,
         permanentDeleteAfterDays: Math.max(0, Math.floor(Number(permanentDeleteAfterDays)) || 0),
+      spamSenderWhitelist,
       };
 
       const token = localStorage.getItem('mailclient_token');
@@ -296,6 +417,13 @@ export default function SettingsGeneralTab({
         if (data.settings.geminiModel !== undefined) {
           originalConfigRef.current.geminiModel = data.settings.geminiModel;
           setGeminiModel(data.settings.geminiModel);
+        }
+        if (Array.isArray(data.settings.spamSenderWhitelist)) {
+          const normalized = data.settings.spamSenderWhitelist.map((s: any) =>
+            String(s).toLowerCase().trim()
+          );
+          originalConfigRef.current.spamSenderWhitelist = normalized;
+          setSpamSenderWhitelist(normalized);
         }
       }
 
@@ -429,6 +557,138 @@ export default function SettingsGeneralTab({
           </div>
         </Card>
       </div>
+
+      {/* Sektion: Externe E-Mail-Inhalte (Datenschutz) */}
+      {onExternalContentPrefsChange && (
+        <div style={{ marginTop: '1.5rem' }}>
+          <Card className="p-8 space-y-4">
+            <h2 className="text-xl font-semibold mb-3">Externe E-Mail-Inhalte</h2>
+            <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '1rem' }}>
+              Externe Inhalte (z. B. Bilder von Servern wie tracking-Domains) werden standardmäßig blockiert, um
+              Ihre Privatsphäre zu schützen. Sie können sie hier global oder für bestimmte Domains und Absender
+              erlauben.
+            </p>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onExternalContentPrefsChange({ externalContentAlwaysAllow: !externalContentAlwaysAllow })
+                  }
+                  style={{
+                    width: '48px',
+                    height: '24px',
+                    borderRadius: '12px',
+                    backgroundColor: externalContentAlwaysAllow ? '#4CAF50' : '#ccc',
+                    position: 'relative',
+                    cursor: 'pointer',
+                    border: 'none',
+                    transition: 'background-color 0.2s',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '20px',
+                      height: '20px',
+                      borderRadius: '50%',
+                      backgroundColor: '#fff',
+                      position: 'absolute',
+                      top: '2px',
+                      left: externalContentAlwaysAllow ? '26px' : '2px',
+                      transition: 'left 0.2s',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                    }}
+                  />
+                </button>
+                <span style={{ fontSize: '0.875rem', color: '#333' }}>
+                  Externe Inhalte (z. B. Bilder) standardmäßig anzeigen
+                </span>
+              </div>
+              <small className="block mt-1 text-sm text-gray-500">
+                Wenn aktiviert, werden externe Bilder in allen E-Mails angezeigt. Deaktiviert empfohlen für mehr
+                Datenschutz.
+              </small>
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label
+                style={{
+                  display: 'block',
+                  marginBottom: '0.5rem',
+                  fontWeight: '600',
+                  color: '#333',
+                  fontSize: '0.9rem',
+                }}
+              >
+                Erlaubte Domains
+              </label>
+              <p style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.5rem' }}>
+                Domains, von denen Bilder und externe Inhalte geladen werden dürfen (z. B. amazon.de,
+                m.media-amazon.com).
+              </p>
+              <ExternalContentList
+                items={externalContentAllowedDomains}
+                placeholder="z. B. amazon.de"
+                onAdd={(domain) => {
+                  const normalized = domain.toLowerCase().trim();
+                  if (!normalized) return;
+                  const existing = externalContentAllowedDomains.map((d) => d.toLowerCase());
+                  if (existing.includes(normalized)) return;
+                  onExternalContentPrefsChange({
+                    externalContentAllowedDomains: [...externalContentAllowedDomains, normalized],
+                  });
+                }}
+                onRemove={(domain) => {
+                  onExternalContentPrefsChange({
+                    externalContentAllowedDomains: externalContentAllowedDomains.filter(
+                      (d) => d.toLowerCase() !== domain.toLowerCase()
+                    ),
+                  });
+                }}
+              />
+            </div>
+
+            <div>
+              <label
+                style={{
+                  display: 'block',
+                  marginBottom: '0.5rem',
+                  fontWeight: '600',
+                  color: '#333',
+                  fontSize: '0.9rem',
+                }}
+              >
+                Erlaubte Absender
+              </label>
+              <p style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.5rem' }}>
+                E-Mail-Adressen von Absendern, deren externe Inhalte immer angezeigt werden (z. B.
+                versandbestaetigung@amazon.de).
+              </p>
+              <ExternalContentList
+                items={externalContentAllowedSenders}
+                placeholder="z. B. newsletter@example.com"
+                onAdd={(sender) => {
+                  const normalized = sender.toLowerCase().trim();
+                  if (!normalized || !normalized.includes('@')) return;
+                  const existing = externalContentAllowedSenders.map((s) => s.toLowerCase());
+                  if (existing.includes(normalized)) return;
+                  onExternalContentPrefsChange({
+                    externalContentAllowedSenders: [...externalContentAllowedSenders, normalized],
+                  });
+                }}
+                onRemove={(sender) => {
+                  onExternalContentPrefsChange({
+                    externalContentAllowedSenders: externalContentAllowedSenders.filter(
+                      (s) => s.toLowerCase() !== sender.toLowerCase()
+                    ),
+                  });
+                }}
+              />
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Sektion 3: AI-Einstellungen */}
       <div style={{ marginTop: '1.5rem' }}>
@@ -568,6 +828,47 @@ export default function SettingsGeneralTab({
               </div>
             </>
           )}
+
+          {/* Spam-Whitelist für Absender */}
+          <div style={{ marginTop: '1.5rem' }}>
+            <h3 className="text-lg font-semibold mb-2">Spam-Whitelist für Absender</h3>
+            <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.5rem' }}>
+              Absender (E-Mail-Adressen oder Domains), die <strong>niemals als Spam eingestuft</strong> werden sollen.
+              Ein Eintrag pro Zeile, z. B.:
+            </p>
+            <ul style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.5rem', paddingLeft: '1.25rem' }}>
+              <li><code>newsletter@example.com</code> – exakte Adresse</li>
+              <li><code>@firma.de</code> – alle Absender mit dieser Domain</li>
+              <li><code>firma.de</code> – alle Absender mit Domain <code>firma.de</code></li>
+            </ul>
+            <textarea
+              value={spamSenderWhitelist.join('\n')}
+              onChange={(e) =>
+                setSpamSenderWhitelist(
+                  e.target.value
+                    .split('\n')
+                    .map((s) => s.toLowerCase().trim())
+                    .filter((s) => s.length > 0)
+                )
+              }
+              rows={5}
+              style={{
+                width: '100%',
+                maxWidth: '480px',
+                padding: '0.5rem',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '0.875rem',
+                fontFamily: 'monospace',
+                whiteSpace: 'pre',
+              }}
+              placeholder={'newsletter@example.com\n@firma.de\nfirma.de'}
+            />
+            <small className="block mt-1 text-sm text-gray-500">
+              Treffer werden vor dem AI-Spam-Check geprüft. Bei Übereinstimmung wird die Nachricht immer als „kein Spam“
+              behandelt und der AI-Aufruf entfällt.
+            </small>
+          </div>
         </Card>
       </div>
 

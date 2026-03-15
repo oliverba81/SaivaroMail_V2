@@ -96,11 +96,15 @@ function WorkflowEditorContent({
     const convertedNodes = initialWorkflow.nodes.map((n) => {
       let nodeType = 'actionNode';
       let originalType = n.type;
-      
+
       // Migration: Konvertiere alte Trigger-Knoten zu Start-Blöcken
       if (n.type.includes('Trigger') || n.type.includes('trigger') || n.type === 'workflowStartNode') {
         nodeType = 'startNode';
         originalType = 'workflowStartNode';
+      } else if (n.type === 'spamDecisionNode') {
+        // Spezieller visueller Typ für Spam-Entscheidung
+        nodeType = 'spamDecisionNode';
+        originalType = 'spamDecisionNode';
       } else if (n.type.includes('Condition') || n.type.includes('condition')) {
         nodeType = 'conditionNode';
       } else if (n.type.includes('Department') || n.type.includes('department') || n.type === 'departmentNode') {
@@ -214,6 +218,7 @@ function WorkflowEditorContent({
 
   const onConnect = useCallback(
     (params: Connection) => {
+      // React Flow setzt sourceHandle/targetHandle automatisch anhand der Handle-IDs (z.B. 'yes'/'no' beim SpamDecisionNode)
       setEdges((eds) => addEdge({ ...params, deletable: true }, eds));
     },
     [setEdges]
@@ -271,10 +276,16 @@ function WorkflowEditorContent({
         y: event.clientY,
       });
 
-      const nodeType = type === 'workflowStartNode' ? 'startNode' 
-        : type.includes('Condition') ? 'conditionNode' 
-        : type.includes('Department') || type === 'departmentNode' ? 'departmentNode'
-        : 'actionNode';
+      const nodeType =
+        type === 'workflowStartNode'
+          ? 'startNode'
+          : type === 'spamDecisionNode'
+          ? 'spamDecisionNode'
+          : type.includes('Condition')
+          ? 'conditionNode'
+          : type.includes('Department') || type === 'departmentNode'
+          ? 'departmentNode'
+          : 'actionNode';
       const defaultData = getDefaultNodeData(type);
       
       const newNode = {
@@ -300,6 +311,7 @@ function WorkflowEditorContent({
     const labels: Record<string, string> = {
       workflowStartNode: 'Start',
       emailCondition: 'Bedingung',
+      spamDecisionNode: 'Spam-Prüfung (AI)',
       setThemeAction: 'Thema setzen',
       setUrgencyAction: 'Dringlichkeit setzen',
       markImportantAction: 'Als wichtig markieren',
@@ -606,6 +618,34 @@ function WorkflowEditorContent({
             <FiFilter />
             <span>E-Mail-Bedingung</span>
           </div>
+
+          <div
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData('application/reactflow', 'spamDecisionNode');
+            }}
+            style={{
+              marginTop: '0.5rem',
+              padding: '0.75rem',
+              border: '1px solid #dee2e6',
+              borderRadius: '6px',
+              backgroundColor: 'white',
+              cursor: 'grab',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#fdecea';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'white';
+            }}
+            title="Prüft per AI, ob eine Nachricht Spam ist, und verzweigt in Ja/Nein."
+          >
+            <FiX style={{ color: '#dc3545' }} />
+            <span>Spam-Prüfung (AI)</span>
+          </div>
         </div>
 
 
@@ -753,6 +793,7 @@ function WorkflowEditorContent({
               nodeColor={(node) => {
                 if (node.type === 'startNode') return '#007bff';
                 if (node.type === 'conditionNode') return '#ffc107';
+                if (node.type === 'spamDecisionNode') return '#dc3545';
                 if (node.type === 'departmentNode') return '#17a2b8';
                 return '#28a745';
               }}
@@ -1163,6 +1204,26 @@ function NodeConfigurationPanel({
             }} style={{ padding: '0.5rem 0.75rem', fontSize: '0.875rem', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Nur eine Bedingung</button>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (node.type === 'spamDecisionNode') {
+    return (
+      <div>
+        <p style={{ color: '#6c757d', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
+          Dieser Knoten prüft mithilfe des in den Allgemeinen Einstellungen gewählten AI-Providers
+          (OpenAI oder Google Gemini), ob eine Nachricht als Spam eingestuft wird.
+        </p>
+        <p style={{ color: '#6c757d', fontSize: '0.8rem', marginBottom: '0.75rem' }}>
+          Der obere Ausgang (<span style={{ color: '#dc3545' }}>Ja (Spam)</span>) wird verwendet,
+          wenn die Nachricht als Spam erkannt wird. Der untere Ausgang (
+          <span style={{ color: '#28a745' }}>Nein (kein Spam)</span>) wird bei Nicht-Spam verwendet.
+        </p>
+        <p style={{ color: '#6c757d', fontSize: '0.8rem' }}>
+          Hinweis: Jeder durchlaufende E-Mail-Datensatz kann hier einen AI-Aufruf auslösen
+          (abhängig von Caching/Implementierung). Dies kann Kosten und Latenz verursachen.
+        </p>
       </div>
     );
   }

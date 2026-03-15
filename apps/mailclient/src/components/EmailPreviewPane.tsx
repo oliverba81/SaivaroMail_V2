@@ -64,6 +64,9 @@ interface EmailPreviewPaneProps {
   onReplyToEmail?: (emailId: string) => void;
   /** Aktueller User – für Thread-Ansicht (Badge „In Bearbeitung“, Antworten-Button) */
   currentUserId?: string | null;
+  /** Layout-Einstellungen inkl. externe Inhalte (Bilder) */
+  layoutPreferences?: import('@/hooks/useEmailState').LayoutPreferences;
+  saveLayoutPreferences?: (prefs: Partial<import('@/hooks/useEmailState').LayoutPreferences>) => void;
 }
 
 function EmailPreviewPane({
@@ -93,6 +96,8 @@ function EmailPreviewPane({
   onRefresh,
   onReplyToEmail,
   currentUserId,
+  layoutPreferences,
+  saveLayoutPreferences,
 }: EmailPreviewPaneProps) {
   const router = useRouter();
   const [notes, setNotes] = useState<EmailNoteFromApi[]>([]);
@@ -179,6 +184,8 @@ function EmailPreviewPane({
           showThreadView={showThreadView}
           onReplyToEmail={onReplyToEmail}
           currentUserId={currentUserId}
+          layoutPreferences={layoutPreferences}
+          saveLayoutPreferences={saveLayoutPreferences}
         />
       </div>
 
@@ -453,6 +460,8 @@ const EmailPreviewPaneMemo = React.memo(EmailPreviewPane, (prevProps, nextProps)
     prevProps.activeTab === nextProps.activeTab &&
     prevProps.onReplyToEmail === nextProps.onReplyToEmail &&
     prevProps.currentUserId === nextProps.currentUserId &&
+    prevProps.layoutPreferences === nextProps.layoutPreferences &&
+    prevProps.saveLayoutPreferences === nextProps.saveLayoutPreferences &&
     sameReplyContexts &&
     sameTabSubjects &&
     sameTabReplyToSubjects

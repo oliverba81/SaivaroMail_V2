@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { FiStar, FiCheckCircle, FiTrash2, FiPhone, FiMail, FiMessageSquare, FiPaperclip } from 'react-icons/fi';
+import { FiStar, FiCheckCircle, FiTrash2, FiPhone, FiMail, FiMessageSquare, FiPaperclip, FiAlertTriangle } from 'react-icons/fi';
 
 interface Email {
   id: string;
@@ -12,6 +12,7 @@ interface Email {
   read: boolean;
   completed?: boolean;
   deleted?: boolean;
+  spam?: boolean;
   important?: boolean;
   department?: {
     id: string;
@@ -183,6 +184,11 @@ function EmailListItem({
                 <FiStar className="text-gray-400 text-xs" size={14} title="Nicht wichtig" />
               )}
               
+              {/* Spam Symbol */}
+              {email.spam && (
+                <FiAlertTriangle className="text-[#DC2626] text-xs" size={14} title="Spam" />
+              )}
+              
               {/* Erledigt Symbol */}
               {email.completed && (
                 <FiCheckCircle className="text-[#10B981] text-xs" size={14} title="Erledigt" />
@@ -245,6 +251,10 @@ export default React.memo(EmailListItem, (prevProps, nextProps) => {
     prevProps.isActive === nextProps.isActive &&
     prevProps.index === nextProps.index &&
     prevProps.email?.read === nextProps.email?.read &&
+    prevProps.email?.important === nextProps.email?.important &&
+    prevProps.email?.completed === nextProps.email?.completed &&
+    prevProps.email?.deleted === nextProps.email?.deleted &&
+    prevProps.email?.spam === nextProps.email?.spam &&
     prevProps.email?.subject === nextProps.email?.subject &&
     prevProps.email?.date === nextProps.email?.date
   );

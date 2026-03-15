@@ -25,6 +25,12 @@ export interface LayoutPreferences {
   isTimelineCollapsed?: boolean;
   showThreadView?: boolean;
   cardOrder?: string[] | null;
+  /** Erlaubte Domains für externe Inhalte (Bilder) */
+  externalContentAllowedDomains?: string[];
+  /** Erlaubte Absender für externe Inhalte */
+  externalContentAllowedSenders?: string[];
+  /** Externe Inhalte standardmäßig immer anzeigen */
+  externalContentAlwaysAllow?: boolean;
 }
 
 export interface Email {
@@ -118,6 +124,7 @@ export function useEmailState() {
   // States
   const [emails, setEmails] = useState<Email[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'read' | 'unread' | 'completed' | 'not_completed'>(initialFilterState.filter);
@@ -141,7 +148,7 @@ export function useEmailState() {
   } | null>(null);
   const [customFilterId, setCustomFilterId] = useState<string | null>(initialFilterState.customFilterId);
   const [page, setPage] = useState(0);
-  const [limit, setLimit] = useState(100);
+  const [limit, setLimit] = useState(20);
   const [totalPages, setTotalPages] = useState(0);
   const [total, setTotal] = useState(0);
   const [hasNext, setHasNext] = useState(false);
@@ -216,7 +223,7 @@ export function useEmailState() {
   /** Kürzlich per PATCH gesetzter Lese-Status, damit veraltete GET-Antworten ihn nicht überschreiben (Race bei Filter→Alle Mails). */
   const lastReadUpdateRef = useRef<Map<string, { read: boolean; timestamp: number }>>(new Map());
   /** Ref auf aktuelle loadEmails-Funktion, damit Effects nur bei echten Filter/Such-/Seitenänderungen laufen, nicht bei loadEmails-Identitätswechsel. */
-  const loadEmailsRef = useRef<((showLoading?: boolean, pageToLoad?: number) => Promise<void>) | null>(null);
+  const loadEmailsRef = useRef<((showLoading?: boolean, pageToLoad?: number, append?: boolean) => Promise<void>) | null>(null);
   const LAST_READ_PRIORITY_MS = 8000;
   const LAST_READ_CLEANUP_MS = 15000;
 
@@ -284,7 +291,8 @@ export function useEmailState() {
             setSearchFields(data.settings.searchFields);
           }
           if (data.settings?.layoutPreferences != null && typeof data.settings.layoutPreferences === 'object') {
-            setLayoutPreferences(data.settings.layoutPreferences as LayoutPreferences);
+            const lp = data.settings.layoutPreferences as LayoutPreferences;
+            setLayoutPreferences(lp);
           }
         }
       } catch (err) {
@@ -448,10 +456,13 @@ export function useEmailState() {
     // Keine doppelte Speicherung nötig
   }, [customFilterId, router]);
 
-  const loadEmails = useCallback(async (showLoading: boolean = true, pageToLoad: number = page) => {
-    if (shouldEmitAgentIngest()) { fetch('http://127.0.0.1:7242/ingest/6f6d9a88-300b-4056-b028-ab51bf2b9e32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useEmailState.ts:loadEmails',message:'loadEmails called',data:{showLoading,pageToLoad,emailFiltersLen:emailFilters.length,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C,D'})}).catch(()=>{}); }
+  const loadEmails = useCallback(async (showLoading: boolean = true, pageToLoad: number = page, append: boolean = false) => {
+    if (shouldEmitAgentIngest()) { fetch('http://127.0.0.1:7242/ingest/6f6d9a88-300b-4056-b028-ab51bf2b9e32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useEmailState.ts:loadEmails',message:'loadEmails called',data:{showLoading,pageToLoad,append,emailFiltersLen:emailFilters.length,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C,D'})}).catch(()=>{}); }
+
     try {
-      if (showLoading) {
+      if (append) {
+        setLoadingMore(true);
+      } else if (showLoading) {
         setLoading(true);
       }
       const token = localStorage.getItem('mailclient_token');
@@ -470,9 +481,7 @@ export function useEmailState() {
         params.append('filter', filter);
       }
       params.append('page', pageToLoad.toString());
-      if (limit !== 100) {
-        params.append('limit', limit.toString());
-      }
+      params.append('limit', limit.toString());
       const shouldShowDeleted = !customFilterId || (customFilterId && emailFilters.length > 0 && 
         emailFilters.find((f: any) => f.id === customFilterId)?.rules?.some((r: any) => {
           if (r.field === 'status' && r.value) {
@@ -595,25 +604,40 @@ export function useEmailState() {
       for (const [id, entry] of Array.from(lastReadUpdateRef.current.entries())) {
         if (now - entry.timestamp > LAST_READ_CLEANUP_MS) lastReadUpdateRef.current.delete(id);
       }
-      setEmails(transformedEmails);
+      if (append) {
+        setEmails(prevEmails => {
+          const existingIds = new Set(prevEmails.map(e => e.id));
+          const merged = [...prevEmails, ...transformedEmails.filter(e => !existingIds.has(e.id))];
+          return merged;
+        });
+      } else {
+        setEmails(transformedEmails);
 
-      // Verwende Ref für selectedEmailId, um unnötige Re-Erstellung von loadEmails zu vermeiden
-      const currentSelectedEmailId = selectedEmailIdRef.current;
-      if (currentSelectedEmailId && !transformedEmails.find((e: Email) => e.id === currentSelectedEmailId)) {
-        setSelectedEmailId(null);
-        setSelectedEmailDetails(null);
-        selectedEmailIdRef.current = null;
+        // Verwende Ref für selectedEmailId, um unnötige Re-Erstellung von loadEmails zu vermeiden
+        const currentSelectedEmailId = selectedEmailIdRef.current;
+        if (currentSelectedEmailId && !transformedEmails.find((e: Email) => e.id === currentSelectedEmailId)) {
+          setSelectedEmailId(null);
+          setSelectedEmailDetails(null);
+          selectedEmailIdRef.current = null;
+        }
       }
     } catch (err: any) {
       setError('Fehler beim Laden der E-Mails');
     } finally {
-      if (showLoading) {
+      if (append) {
+        setLoadingMore(false);
+      } else if (showLoading) {
         setLoading(false);
       }
     }
   }, [searchQuery, filter, customFilterId, emailFilters, searchFields, limit, page, router]);
 
   loadEmailsRef.current = loadEmails;
+
+  const handleLoadMore = useCallback(() => {
+    if (!hasNext || loadingMore) return;
+    setPage((prev) => prev + 1);
+  }, [hasNext, loadingMore]);
 
   // Event-Listener für Such-Änderungen aus der Sidebar
   useEffect(() => {
@@ -701,7 +725,7 @@ export function useEmailState() {
     // Nur bei Seitenwechsel laden (nicht bei emails.length Änderungen)
     // WICHTIG: page > 0 check verhindert, dass beim Mount (page = 0) geladen wird
     if (page > 0) {
-      loadEmailsRef.current?.(true, page);
+      loadEmailsRef.current?.(false, page, true);
     }
   }, [page]);
 
@@ -866,7 +890,8 @@ export function useEmailState() {
           setSelectedEmailDetails({ ...cachedDetails, read: true });
           setEmails(prev => prev.map(e => e.id === emailId ? { ...e, read: true } : e));
         });
-        performMarkAsReadRef.current?.(emailId, true, false);
+        // Beim Öffnen aus dem Cache: Serverstatus aktualisieren, aber kein hartes Reload der Liste erzwingen
+        performMarkAsReadRef.current?.(emailId, true, false, { skipReload: true });
       } else {
         setSelectedEmailDetails(cachedDetails);
       }
@@ -905,7 +930,8 @@ export function useEmailState() {
         }
       });
       if (isUnread) {
-        performMarkAsReadRef.current?.(emailId, true, false);
+        // Beim Öffnen einer ungelesenen E-Mail aus der Liste: Serverstatus aktualisieren, aber kein hartes Reload der Liste erzwingen
+        performMarkAsReadRef.current?.(emailId, true, false, { skipReload: true });
       }
       setLoadingEmailDetails(true); // Lade vollständige Details im Hintergrund
     } else {
@@ -927,7 +953,7 @@ export function useEmailState() {
   }, [handleEmailClick]);
 
   // Interne Funktion für tatsächliche Markierung (ohne Debouncing)
-  const performMarkAsRead = useCallback(async (emailId: string, read: boolean, previousState: boolean) => {
+  const performMarkAsRead = useCallback(async (emailId: string, read: boolean, previousState: boolean, options?: { skipReload?: boolean }) => {
     // Prüfe ob Request bereits läuft
     const existingRequest = pendingReadRequests.current.get(emailId);
     if (existingRequest) {
@@ -981,8 +1007,11 @@ export function useEmailState() {
       // Cache invalidieren
       emailDetailsCache.current.delete(emailId);
 
-      await loadEmails(false);
-      window.dispatchEvent(new CustomEvent('emailsFetched'));
+      // Optionales Reload der Liste (z.B. nach expliziter Aktion); kann für bestimmte Aufrufer unterdrückt werden
+      if (!options?.skipReload) {
+        await loadEmails(false, 0, false);
+        window.dispatchEvent(new CustomEvent('emailsFetched'));
+      }
     } catch (error: any) {
       if (error.name === 'AbortError') {
         // Request wurde abgebrochen - ignoriere
@@ -1157,7 +1186,7 @@ export function useEmailState() {
         emailDetailsCache.current.delete(selectedEmailId);
       }
 
-      await loadEmails(false);
+      await loadEmails(false, 0, false);
       window.dispatchEvent(new CustomEvent('emailsFetched'));
     } catch (err: any) {
       setError('Fehler beim Aktualisieren der E-Mail');
@@ -1314,7 +1343,7 @@ export function useEmailState() {
         emailDetailsCache.current.delete(selectedEmailId);
       }
 
-      await loadEmails();
+      await loadEmails(true, 0, false);
     } catch (err: any) {
       setError('Fehler beim Löschen der E-Mail');
     } finally {
@@ -1366,7 +1395,7 @@ export function useEmailState() {
         emailDetailsCache.current.delete(selectedEmailId);
       }
 
-      await loadEmails();
+      await loadEmails(true, 0, false);
     } catch (err: any) {
       setError('Fehler beim Wiederherstellen der E-Mail');
     } finally {
@@ -1432,7 +1461,7 @@ export function useEmailState() {
         text: data.message || `${data.totalCount} E-Mail${data.totalCount !== 1 ? 's' : ''} abgerufen`,
       });
 
-      await loadEmails();
+      await loadEmails(true, 0, false);
 
       setTimeout(() => {
         setFetchMessage(null);
@@ -1603,7 +1632,7 @@ export function useEmailState() {
 
       // Cache invalidieren und neu laden
       emailIds.forEach(id => emailDetailsCache.current.delete(id));
-      await loadEmails(false);
+      await loadEmails(false, 0, false);
       window.dispatchEvent(new CustomEvent('emailsFetched'));
     } catch (err: any) {
       // Rollback für alle E-Mails (verwende emailIds statt selectedEmails, da Set sich ändern könnte)
@@ -1954,6 +1983,7 @@ export function useEmailState() {
     // States
     emails,
     loading,
+    loadingMore,
     error,
     searchQuery,
     setSearchQuery,
@@ -2007,6 +2037,7 @@ export function useEmailState() {
     handleBulkMarkAsSpam,
     handleBulkMarkAsImportant,
     handleBulkDelete,
+    handleLoadMore,
     formatDate,
     formatDateForTable,
     formatDateForPreview,

@@ -15,6 +15,8 @@ export interface CompanyConfig {
   aiProvider: AiProvider;
   geminiApiKey: string | null;
   geminiModel: string;
+  /** Absender-/Domain-Whitelist für Spam-Erkennung (z. B. foo@bar.de, @firma.de, firma.de). */
+  spamSenderWhitelist?: string[];
 }
 
 // Zentrale Definition der erlaubten OpenAI-Modelle
@@ -53,15 +55,15 @@ export function isValidAiProvider(provider: string): provider is AiProvider {
 
 export async function getCompanyConfig(client: PoolClient): Promise<CompanyConfig> {
   const result = await client.query(
-    `SELECT openai_api_key, openai_model, elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_enabled, theme_required, permanent_delete_after_days, ai_provider, gemini_api_key, gemini_model 
+    `SELECT openai_api_key, openai_model, elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_enabled, theme_required, permanent_delete_after_days, ai_provider, gemini_api_key, gemini_model, spam_sender_whitelist
      FROM company_config WHERE id = 'company_config'`
   );
   
   if (result.rows.length === 0) {
     // Erstelle Standard-Konfiguration
     await client.query(
-      `INSERT INTO company_config (id, openai_api_key, openai_model, elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_enabled, theme_required, permanent_delete_after_days, ai_provider, gemini_api_key, gemini_model) 
-       VALUES ('company_config', NULL, 'gpt-4o-mini', NULL, NULL, false, false, 0, 'openai', NULL, 'gemini-2.0-flash')`
+      `INSERT INTO company_config (id, openai_api_key, openai_model, elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_enabled, theme_required, permanent_delete_after_days, ai_provider, gemini_api_key, gemini_model, spam_sender_whitelist) 
+       VALUES ('company_config', NULL, 'gpt-4o-mini', NULL, NULL, false, false, 0, 'openai', NULL, 'gemini-2.0-flash', ARRAY[]::text[])`
     );
     return { 
       openaiApiKey: null, 
@@ -74,6 +76,7 @@ export async function getCompanyConfig(client: PoolClient): Promise<CompanyConfi
       aiProvider: 'openai',
       geminiApiKey: null,
       geminiModel: 'gemini-2.0-flash',
+      spamSenderWhitelist: [],
     };
   }
   
@@ -90,6 +93,9 @@ export async function getCompanyConfig(client: PoolClient): Promise<CompanyConfi
     aiProvider: (row.ai_provider === 'google' ? 'google' : 'openai') as AiProvider,
     geminiApiKey: row.gemini_api_key ? decryptApiKey(row.gemini_api_key) : null,
     geminiModel: row.gemini_model || 'gemini-2.0-flash',
+    spamSenderWhitelist: Array.isArray(row.spam_sender_whitelist)
+      ? row.spam_sender_whitelist.map((s: any) => String(s).toLowerCase())
+      : [],
   };
   
   return config;
@@ -110,6 +116,7 @@ export async function saveCompanyConfig(
   const hasAiProvider = 'aiProvider' in config;
   const hasGeminiKey = 'geminiApiKey' in config;
   const hasGeminiModel = 'geminiModel' in config;
+  const hasSpamSenderWhitelist = 'spamSenderWhitelist' in config;
 
   // Wenn Key explizit gesetzt wurde (auch wenn null), verschlüssele oder setze null
   const encryptedOpenAIKey = hasOpenAIKey 
@@ -214,6 +221,16 @@ export async function saveCompanyConfig(
   if (hasGeminiModel && geminiModel !== undefined) {
     updates.push(`gemini_model = $${paramIndex}`);
     values.push(geminiModel);
+    paramIndex++;
+  }
+
+  if (hasSpamSenderWhitelist) {
+    updates.push(`spam_sender_whitelist = $${paramIndex}`);
+    values.push(
+      Array.isArray(config.spamSenderWhitelist)
+        ? config.spamSenderWhitelist.map((s) => String(s).toLowerCase().trim()).filter((s) => s.length > 0)
+        : []
+    );
     paramIndex++;
   }
   

@@ -633,7 +633,7 @@ export async function fetchEmailsFromAccount(
                             ? parsed.to.map((addr: any) => (addr as any).address || (addr as any).text || addr)
                             : [(parsed.to as any).address || (parsed.to as any).text || parsed.to])
                         : [],
-                      body: parsed.text || parsed.html || '',
+                      body: parsed.html || parsed.text || '',
                       date: parsed.date || new Date(),
                       uid: uid,
                       hasAttachment: parsed.attachments && parsed.attachments.length > 0,

@@ -13,6 +13,7 @@ export default function EmailsPage() {
       // States (von useEmailState)
       emails={emailState.emails}
       loading={emailState.loading}
+      loadingMore={emailState.loadingMore}
       error={emailState.error}
       searchQuery={emailState.searchQuery}
       filter={emailState.filter}
@@ -77,6 +78,9 @@ export default function EmailsPage() {
       onToggleTimeline={emailResize.toggleTimeline}
       showThreadView={emailState.layoutPreferences?.showThreadView ?? false}
       onShowThreadViewChange={(value) => emailState.saveLayoutPreferences({ showThreadView: value })}
+      layoutPreferences={emailState.layoutPreferences}
+      saveLayoutPreferences={emailState.saveLayoutPreferences}
+      onLoadMore={emailState.handleLoadMore}
     />
   );
 }

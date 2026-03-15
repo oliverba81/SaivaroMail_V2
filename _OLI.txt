@@ -1,6 +1,28 @@
+Tunnel zum Server:
 cd C:\Users\Buero-Oliver\Documents\Cursor-Projekte\SaivaroMail_v2_Git\SaivaroMail_V2
-
 ssh -i .\SaivaroMail -N -L 5433:localhost:5432 root@168.119.182.53
+
+Befehle auf Server ausführen:
+2. Terminalfenster:
+C:\Users\Buero-Oliver\Documents\Cursor-Projekte\SaivaroMail_v2_Git\SaivaroMail_V2
+ssh -i SaivaroMail root@168.119.182.53
+Passwort eingeben
+
+Neue IP Freischalten
+nano /etc/postgresql/16/main/pg_hba.conf
+IP über wieistmeineip suchen.
+Am Ende der pg_hba.conf hinzufügen oder Änderung
+host    all             all             84.62.140.106/32                scram-sha-256
+Ctrl + o
+Ctrl + X
+systemctl reload postgresql
+
+Zugriff auf Datenbank:
+PostgreSQL installieren
+(https://www.enterprisedb.com/downloads/postgres-postgresql-downloads)
+
+
+
 
 Frontend:
 http://testfirma2.localhost:3000/login

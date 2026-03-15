@@ -4,6 +4,7 @@
 
 import { PoolClient } from 'pg';
 import type { WorkflowNode, EmailDataForAutomation } from './automation-engine';
+import type { SpamClassificationResult } from './ai-spam-classifier';
 import { logEmailEventWithClient } from './email-events';
 import { replaceEmailVariables, EmailData } from './automation-variables';
 import nodemailer from 'nodemailer';
@@ -94,7 +95,8 @@ export async function executeAction(
   companyId: string,
   actionNode: WorkflowNode,
   emailData: EmailDataForAutomation,
-  userId: string
+  userId: string,
+  context?: { spam?: SpamClassificationResult | null }
 ): Promise<{ success: boolean; actionName: string; error?: string }> {
   // Validierung der Eingabeparameter
   if (!actionNode || !actionNode.data) {
@@ -203,7 +205,12 @@ export async function executeAction(
         );
 
         try {
-          await logEmailEventWithClient(client, emailData.id, userId, 'marked_spam', {});
+          const spam = context?.spam || null;
+          await logEmailEventWithClient(client, emailData.id, userId, 'marked_spam', {
+            spamScore: spam?.score,
+            spamReason: spam?.reason,
+            spamProvider: spam?.provider,
+          });
         } catch (logError: any) {
           // Logging-Fehler sollten die Aktion nicht stoppen
           console.error(`[AutomationEngine] Fehler beim Protokollieren des Spam-Events:`, logError);

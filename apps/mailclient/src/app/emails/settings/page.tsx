@@ -214,6 +214,9 @@ export default function SettingsPage() {
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [emailFilters, setEmailFilters] = useState<EmailFilter[]>([]);
   const [cardOrder, setCardOrder] = useState<string[] | null>(null);
+  const [externalContentAlwaysAllow, setExternalContentAlwaysAllow] = useState(false);
+  const [externalContentAllowedDomains, setExternalContentAllowedDomains] = useState<string[]>([]);
+  const [externalContentAllowedSenders, setExternalContentAllowedSenders] = useState<string[]>([]);
   const [initialSettings, setInitialSettings] = useState<{
     fetchIntervalMinutes?: number;
     openaiApiKey?: string | null;
@@ -226,6 +229,7 @@ export default function SettingsPage() {
     aiProvider?: 'openai' | 'google';
     geminiApiKey?: string | null;
     geminiModel?: string;
+    spamSenderWhitelist?: string[];
   } | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -328,6 +332,18 @@ export default function SettingsPage() {
         } else if (data.settings?.layoutPreferences != null && data.settings.layoutPreferences?.cardOrder === null) {
           setCardOrder(null);
         }
+        if (data.settings?.layoutPreferences != null) {
+          const lp = data.settings.layoutPreferences;
+          if (typeof lp.externalContentAlwaysAllow === 'boolean') {
+            setExternalContentAlwaysAllow(lp.externalContentAlwaysAllow);
+          }
+          if (Array.isArray(lp.externalContentAllowedDomains)) {
+            setExternalContentAllowedDomains(lp.externalContentAllowedDomains);
+          }
+          if (Array.isArray(lp.externalContentAllowedSenders)) {
+            setExternalContentAllowedSenders(lp.externalContentAllowedSenders);
+          }
+        }
         // Allgemein-Tab: initialSettings setzen, um redundanten GET /api/settings zu vermeiden
         setInitialSettings({
           fetchIntervalMinutes: data.settings.fetchIntervalMinutes,
@@ -341,6 +357,9 @@ export default function SettingsPage() {
           aiProvider: data.settings.aiProvider,
           geminiApiKey: data.settings.geminiApiKey ?? null,
           geminiModel: data.settings.geminiModel,
+          spamSenderWhitelist: Array.isArray(data.settings.spamSenderWhitelist)
+            ? data.settings.spamSenderWhitelist
+            : [],
         });
       } else {
         setError('Ungültige Antwort vom Server');
@@ -639,6 +658,62 @@ export default function SettingsPage() {
     }
   }, [router, toast]);
 
+  const handleExternalContentPrefsChange = useCallback(
+    async (prefs: {
+      externalContentAlwaysAllow?: boolean;
+      externalContentAllowedDomains?: string[];
+      externalContentAllowedSenders?: string[];
+    }) => {
+      if (prefs.externalContentAlwaysAllow !== undefined) {
+        setExternalContentAlwaysAllow(prefs.externalContentAlwaysAllow);
+      }
+      if (prefs.externalContentAllowedDomains !== undefined) {
+        setExternalContentAllowedDomains(prefs.externalContentAllowedDomains);
+      }
+      if (prefs.externalContentAllowedSenders !== undefined) {
+        setExternalContentAllowedSenders(prefs.externalContentAllowedSenders);
+      }
+      try {
+        const token = getLocalStorageItem('mailclient_token');
+        if (!token) return;
+        const body: Record<string, unknown> = {};
+        if (prefs.externalContentAlwaysAllow !== undefined) {
+          body.externalContentAlwaysAllow = prefs.externalContentAlwaysAllow;
+        }
+        if (prefs.externalContentAllowedDomains !== undefined) {
+          body.externalContentAllowedDomains = prefs.externalContentAllowedDomains;
+        }
+        if (prefs.externalContentAllowedSenders !== undefined) {
+          body.externalContentAllowedSenders = prefs.externalContentAllowedSenders;
+        }
+        const response = await fetch('/api/settings', {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ layoutPreferences: body }),
+        });
+        if (response.status === 401) {
+          removeLocalStorageItem('mailclient_token');
+          removeLocalStorageItem('mailclient_user');
+          router.push('/login');
+          return;
+        }
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          toast.showError(data.error || 'Einstellungen für externe Inhalte konnten nicht gespeichert werden');
+        } else {
+          toast.showSuccess('Einstellungen für externe Inhalte gespeichert');
+        }
+      } catch (err: any) {
+        console.error('Fehler beim Speichern der externen Inhalte-Einstellungen:', err);
+        toast.showError('Einstellungen konnten nicht gespeichert werden');
+      }
+    },
+    [router, toast]
+  );
+
   // Callback für onSaveFilters
   const handleSaveFilters = useCallback(async () => {
     try {
@@ -825,6 +900,10 @@ export default function SettingsPage() {
                   onCardOrderChange={handleCardOrderChange}
                   onSaveFilters={handleSaveFilters}
                   initialSettings={initialSettings ?? undefined}
+                  externalContentAlwaysAllow={externalContentAlwaysAllow}
+                  externalContentAllowedDomains={externalContentAllowedDomains}
+                  externalContentAllowedSenders={externalContentAllowedSenders}
+                  onExternalContentPrefsChange={handleExternalContentPrefsChange}
                 />
                 )
               )}
